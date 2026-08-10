@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>701 Kingsway - Concrete Dashboard</title>
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --card: #ffffff;
+    --border: #e1e0d9;
+    --text: #1c1c1a;
+    --text-secondary: #6b6a64;
+    --text-muted: #98978f;
+    --green: #3b6d11;
+    --green-bg: #eaf3de;
+    --amber: #854f0b;
+    --amber-bg: #faeeda;
+    --red: #a32d2d;
+    --red-bg: #fcebeb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .subtitle { font-size: 13px; color: var(--text-secondary); margin: 0; }
+  #sync-btn {
+    background: var(--text);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #sync-btn:hover { opacity: 0.9; }
+  #sync-btn:disabled { opacity: 0.5; cursor: default; }
+  #status { font-size: 12px; color: var(--text-muted); margin-top: 6px; text-align: right; }
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 1.5rem;
+  }
+  .metric-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+  }
+  .metric-card.danger { background: var(--red-bg); border-color: var(--red-bg); }
+  .metric-label { font-size: 12px; color: var(--text-secondary); margin: 0 0 4px; }
+  .metric-value { font-size: 22px; font-weight: 600; margin: 0; }
+  .metric-card.danger .metric-label,
+  .metric-card.danger .metric-value { color: var(--red); }
+  .section-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin: 0 0 8px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.5rem 1.25rem;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: none; }
+  .row-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 600; color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+  .row-body { flex: 1; min-width: 0; }
+  .row-top {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px; font-size: 14px;
+  }
+  .row-title { font-weight: 600; }
+  .row-pct { font-weight: 600; font-size: 13px; }
+  .bar-track { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+  .bar-fill { height: 100%; border-radius: 3px; }
+  .row-bottom { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
+  footer { margin-top: 1.5rem; font-size: 12px; color: var(--text-muted); }
+  .empty { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 14px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>701 Kingsway - Concrete progress</h1>
+        <p class="subtitle">Estimate vs actual, synced from the Concrete Log</p>
+      </div>
+      <div>
+        <button id="sync-btn" onclick="sync()">Sync now</button>
+        <div id="status">Not synced yet</div>
+      </div>
+    </header>
+
+    <div class="metrics" id="metrics"></div>
+
+    <p class="section-label">By level and category</p>
+    <div class="card">
+      <div id="rows"><div class="empty">Click "Sync now" to load the latest data.</div></div>
+    </div>
+
+    <footer>Costs shown are a proxy budget (blended actual $/m3 per category) since no precon $ budget has been filled in yet.</footer>
+  </div>
+
+<script>
+async function sync() {
+  const btn = document.getElementById('sync-btn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+  status.textContent = 'Contacting Smartsheet...';
+  try {
+    const res = await fetch('/.netlify/functions/sync-concrete');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Sync failed');
+    render(data);
+    status.textContent = 'Last synced ' + new Date(data.updatedAt).toLocaleString();
+  } catch (err) {
+    status.textContent = 'Sync failed: ' + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sync now';
+  }
+}
+
+function render(data) {
+  const { rows, totals } = data;
+  const flagged = rows.filter(r => r.pctUsed !== null && r.pctUsed > 100).length;
+
+  document.getElementById('metrics').innerHTML = `
+    <div class="metric-card">
+      <p class="metric-label">Volume poured (active)</p>
+      <p class="metric-value">${totals.activeActual.toLocaleString()} <span style="font-size:14px;font-weight:400;color:var(--text-secondary);">of ${totals.activeEstimate.toLocaleString()} m3</span></p>
+    </div>
+    <div class="metric-card">
+      <p class="metric-label">Whole building poured</p>
+      <p class="metric-value">${totals.wholeBuildingActual.toLocaleString()} <span style="font-size:14px;font-weight:400;color:var(--text-secondary);">of ${totals.wholeBuildingEstimate.toLocaleString()} m3</span></p>
+    </div>
+    <div class="metric-card ${flagged > 0 ? 'danger' : ''}">
+      <p class="metric-label">Needs attention</p>
+      <p class="metric-value">${flagged} categor${flagged === 1 ? 'y' : 'ies'}</p>
+    </div>
+  `;
+
+  const rowsHtml = rows.map(r => {
+    const pct = r.pctUsed;
+    const over = pct !== null && pct > 100;
+    const near = pct !== null && pct >= 85 && pct <= 100;
+    const barColor = pct === null ? 'var(--text-muted)' : (over ? '#e24b4a' : (near ? '#ef9f27' : '#639922'));
+    const pctColor = pct === null ? 'var(--text-muted)' : (over ? 'var(--red)' : (near ? 'var(--amber)' : 'var(--text-secondary)'));
+    const barWidth = pct === null ? 100 : Math.min(pct, 100);
+    const pctLabel = pct === null ? 'no estimate' : pct.toFixed(1) + '%';
+    const initials = r.category.slice(0, 2).toUpperCase();
+    return `
+      <div class="row">
+        <div class="row-icon">${initials}</div>
+        <div class="row-body">
+          <div class="row-top">
+            <span class="row-title">${r.level} ${r.category}</span>
+            <span class="row-pct" style="color:${pctColor}">${pctLabel}</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill" style="width:${barWidth}%;background:${barColor};"></div></div>
+          <div class="row-bottom">
+            <span>${r.actualVolume.toLocaleString()} of ${r.estimateVolume ? r.estimateVolume.toLocaleString() : '\u2014'} m3</span>
+            <span>$${r.actualCost.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('rows').innerHTML = rowsHtml || '<div class="empty">No pours logged yet.</div>';
+}
+
+// Auto-sync on page load
+sync();
+</script>
+</body>
+</html>
