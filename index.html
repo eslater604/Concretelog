@@ -40,26 +40,11 @@
   .logo-badge {
     background: #fff;
     border-radius: 8px;
-    padding: 8px 16px 6px;
+    padding: 10px 16px;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    line-height: 1;
+    justify-content: center;
     flex-shrink: 0;
-  }
-  .logo-badge .word {
-    font-size: 22px;
-    font-weight: 800;
-    font-style: italic;
-    color: var(--brand-red-bright);
-    letter-spacing: 0.5px;
-  }
-  .logo-badge .tag {
-    font-size: 7px;
-    font-weight: 700;
-    color: var(--brand-red-light);
-    letter-spacing: 0.5px;
-    margin-top: 2px;
   }
   .header-text { padding-top: 2px; }
   .eyebrow {
@@ -132,8 +117,9 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 12px;
-    margin-bottom: 1.5rem;
+    margin-bottom: 12px;
   }
+  .metrics-status { margin-bottom: 1.5rem; }
   .metric-card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -141,10 +127,16 @@
     padding: 1rem;
   }
   .metric-card.danger { background: #FCEBEB; border-color: #FCEBEB; }
+  .metric-card.success { background: #EAF3DE; border-color: #EAF3DE; }
+  .metric-card.warning { background: #FAEEDA; border-color: #FAEEDA; }
   .metric-label { font-size: 12px; color: var(--text-secondary); margin: 0 0 4px; }
   .metric-value { font-size: 22px; font-weight: 700; margin: 0; }
   .metric-card.danger .metric-label,
   .metric-card.danger .metric-value { color: var(--red); }
+  .metric-card.success .metric-label,
+  .metric-card.success .metric-value { color: var(--green); }
+  .metric-card.warning .metric-label,
+  .metric-card.warning .metric-value { color: var(--amber); }
   .section-label {
     font-size: 11px;
     color: var(--text-muted);
@@ -193,8 +185,7 @@
   <header>
     <div class="header-left">
       <div class="logo-badge">
-        <div class="word">MARCON</div>
-        <div class="tag">BUILDING FOR LIFE.</div>
+        <img src="marcon-logo.png" alt="Marcon" style="height:28px;display:block;" />
       </div>
       <div class="header-text">
         <div class="eyebrow"><span class="dot"></span>Marcon Construction Ltd.</div>
@@ -218,13 +209,14 @@
 
   <div class="wrap">
     <div class="metrics" id="metrics"></div>
+    <div class="metrics metrics-status" id="status-metrics"></div>
 
     <p class="section-label">By level and category</p>
     <div class="card">
       <div id="rows"><div class="empty">Click "Sync now" to load the latest data.</div></div>
     </div>
 
-    <footer>Costs shown are a proxy budget (blended actual $/m3 per category) since no precon $ budget has been filled in yet.</footer>
+    <footer>Category-level costs use a proxy rate (blended actual $/m3 per category) since there's no per-category precon budget yet. The whole-building total uses the real $2,726,165 precon concrete budget.</footer>
   </div>
 
 <script>
@@ -250,7 +242,10 @@ async function sync() {
 
 function render(data) {
   const { rows, totals } = data;
-  const flagged = rows.filter(r => r.pctUsed !== null && r.pctUsed > 100).length;
+  const scored = rows.filter(r => r.pctUsed !== null);
+  const onTrack = scored.filter(r => r.pctUsed < 85).length;
+  const near = scored.filter(r => r.pctUsed >= 85 && r.pctUsed <= 100).length;
+  const over = scored.filter(r => r.pctUsed > 100).length;
 
   document.getElementById('metrics').innerHTML = `
     <div class="metric-card">
@@ -265,9 +260,24 @@ function render(data) {
       <p class="metric-label">Whole building poured</p>
       <p class="metric-value">${totals.wholeBuildingActual.toLocaleString()} <span style="font-size:14px;font-weight:400;color:var(--text-secondary);">of ${totals.wholeBuildingEstimate.toLocaleString()} m3</span></p>
     </div>
-    <div class="metric-card ${flagged > 0 ? 'danger' : ''}">
+    <div class="metric-card">
+      <p class="metric-label">Cost spent (whole building)</p>
+      <p class="metric-value">$${Math.round(totals.wholeBuildingActualCost/1000).toLocaleString()}k <span style="font-size:14px;font-weight:400;color:var(--text-secondary);">of $${Math.round(totals.wholeBuildingEstimateCost/1000).toLocaleString()}k</span></p>
+    </div>
+  `;
+
+  document.getElementById('status-metrics').innerHTML = `
+    <div class="metric-card success">
+      <p class="metric-label">On track</p>
+      <p class="metric-value">${onTrack} categor${onTrack === 1 ? 'y' : 'ies'}</p>
+    </div>
+    <div class="metric-card warning">
+      <p class="metric-label">Near estimate</p>
+      <p class="metric-value">${near} categor${near === 1 ? 'y' : 'ies'}</p>
+    </div>
+    <div class="metric-card danger">
       <p class="metric-label">Needs attention</p>
-      <p class="metric-value">${flagged} categor${flagged === 1 ? 'y' : 'ies'}</p>
+      <p class="metric-value">${over} categor${over === 1 ? 'y' : 'ies'}</p>
     </div>
   `;
 
