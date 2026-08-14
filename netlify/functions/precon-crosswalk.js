@@ -40,7 +40,7 @@ exports.PRECON_GROUPS = {
 // - TRM935242 (35MPa Int Column/Shearwalls/PT & Transfer) -> combined
 //   Columns Interior 35MPa + Transfer Slab & Beam group.
 // - TRM935244 (C1 parking multi-use) forces #5 + #20 + #26 into one group.
-// - All 55MPa column/shearwall lines (#10 + #15 + #18) combined per Eric.
+// - TRM955242 (55MPa Ext & Parking) forces #15 + #18 into one group.
 // - Ext topping (TRM932144) counted under Toppings even though precon line
 //   is titled "Interior" (precon volume is 0 either way).
 // Location Used (Smartsheet) -> allowed precon groups. LOCATION IS THE
