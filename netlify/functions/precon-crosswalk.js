@@ -44,6 +44,29 @@ exports.PRECON_GROUPS = {
 // - TRM955242 (55MPa Ext & Parking) forces #15 + #18 into one group.
 // - Ext topping (TRM932144) counted under Toppings even though precon line
 //   is titled "Interior" (precon volume is 0 either way).
+// Location Used (Smartsheet) -> allowed precon groups. LOCATION IS THE
+// DECIDING FACTOR for where volume is allotted (per Eric, Aug 2026): the
+// first entry is the default for that location; the mix code only refines
+// WITHIN the allowed list (e.g. picking which column-strength line), never
+// overrides the location. Example: 450 m3 of TRM925242 (SOG mix) tagged
+// "Footings" counts against Footings.
+exports.LOCATION_TO_GROUPS = {
+  "Footings": ["footings"],
+  "Footings - Crane Pad": ["footings"],
+  "Slab On Grade (Interior Parkade)": ["sog_otherwall_int"],
+  "Slab On Grade (Exterior)": ["not_in_precon"],
+  "Walls (Blind Formed / Shotcrete Only)": ["shotcrete"],
+  "Walls (Excluding Blind Formed / Shotcrete)": ["sog_otherwall_int", "col_shear_int_50", "col_shear_parking_50", "col_ext_parking_55", "col_parking_65", "col_int_65", "ext_walls", "parking_c1"],
+  "Columns": ["col_int_35_transfer", "col_int_45", "col_shear_int_50", "col_int_55", "col_int_60", "col_int_65", "col_ext_35", "col_ext_50", "col_ext_parking_55", "col_ext_65", "col_parking_65", "col_shear_parking_50", "parking_c1"],
+  "Suspended Slab (Parking)": ["parking_c1"],
+  "Suspended Slab (No Exposure - WP Over)": ["rebar_slabs_int", "rebar_slabs_ext", "col_int_35_transfer"],
+  "Concrete Topping (Interior)": ["toppings"],
+  "Concrete Topping (Exterior - non structural)": ["toppings"],
+  "Curbs/Stairs/Planter Walls (Exterior)": ["ext_walls"],
+  "Blinding - Footing Excavation protection": ["leanmix"],
+  "Other - Void Fill, Soil Stabilization, etc.": ["not_in_precon"]
+};
+
 exports.TRM_TO_GROUP = {
   TRM210120: "leanmix",
   TRM25541: "not_in_precon",
