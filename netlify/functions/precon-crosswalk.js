@@ -36,4 +36,83 @@ exports.PRECON_GROUPS = {
 // Assumption notes (review with precon if these ever matter):
 // - TRM845234 (Column Puddling 45MPa C1) -> Columns Interior 45MPa.
 // - TRM930243 (Ext Columns, Slab & Balconies w/ Membrane) -> Rebar Slabs
-//   Exterior; dominant
+//   Exterior; dominant use is balcony/exterior slab pours.
+// - TRM935242 (35MPa Int Column/Shearwalls/PT & Transfer) -> combined
+//   Columns Interior 35MPa + Transfer Slab & Beam group.
+// - TRM935244 (C1 parking multi-use) forces #5 + #20 + #26 into one group.
+// - All 55MPa column/shearwall lines (#10 + #15 + #18) combined per Eric.
+// - Ext topping (TRM932144) counted under Toppings even though precon line
+//   is titled "Interior" (precon volume is 0 either way).
+// Location Used (Smartsheet) -> allowed precon groups. LOCATION IS THE
+// DECIDING FACTOR for where volume is allotted (per Eric, Aug 2026): the
+// first entry is the default for that location; the mix code only refines
+// WITHIN the allowed list (e.g. picking which column-strength line), never
+// overrides the location. Example: 450 m3 of TRM925242 (SOG mix) tagged
+// "Footings" counts against Footings.
+exports.LOCATION_TO_GROUPS = {
+  "Footings": ["footings"],
+  "Footings - Crane Pad": ["footings"],
+  "Slab On Grade (Interior Parkade)": ["sog_otherwall_int"],
+  "Slab On Grade (Exterior)": ["not_in_precon"],
+  "Walls (Blind Formed / Shotcrete Only)": ["shotcrete"],
+  "Walls (Excluding Blind Formed / Shotcrete)": ["sog_otherwall_int", "col_shear_int_50", "col_shear_parking_50", "col_int_55", "col_parking_65", "col_int_65", "ext_walls", "parking_c1"],
+  "Columns": ["col_int_35_transfer", "col_int_45", "col_shear_int_50", "col_int_55", "col_int_60", "col_int_65", "col_ext_35", "col_ext_50", "col_ext_65", "col_parking_65", "col_shear_parking_50", "parking_c1"],
+  "Suspended Slab (Parking)": ["parking_c1"],
+  "Suspended Slab (No Exposure - WP Over)": ["rebar_slabs_int", "rebar_slabs_ext", "col_int_35_transfer"],
+  "Concrete Topping (Interior)": ["toppings"],
+  "Concrete Topping (Exterior - non structural)": ["toppings"],
+  "Curbs/Stairs/Planter Walls (Exterior)": ["ext_walls"],
+  "Blinding - Footing Excavation protection": ["leanmix"],
+  "Other - Void Fill, Soil Stabilization, etc.": ["not_in_precon"]
+};
+
+exports.TRM_TO_GROUP = {
+  TRM210120: "leanmix",
+  TRM25541: "not_in_precon",
+  TRM600122: "rebar_slabs_int",
+  TRM600124: "parking_c1",
+  TRM600222: "rebar_slabs_int",
+  TRM600224: "parking_c1",
+  TRM735144: "shotcrete",
+  TRM820551: "not_in_precon",
+  TRM835242: "parking_c1",
+  TRM845234: "col_int_45",
+  TRM850152: "col_shear_int_50",
+  TRM850252: "col_shear_int_50",
+  TRM850253: "col_shear_int_50",
+  TRM855152: "col_int_55",
+  TRM855153: "col_int_55",
+  TRM855252: "col_int_55",
+  TRM855253: "col_int_55",
+  TRM860152: "col_int_60",
+  TRM860252: "col_int_60",
+  TRM865147: "col_int_65",
+  TRM865242: "col_parking_65",
+  TRM865252: "col_int_65",
+  TRM920142: "toppings",
+  TRM925142: "toppings",
+  TRM925222: "sog_otherwall_int",
+  TRM925242: "sog_otherwall_int",
+  TRM925243: "ext_walls",
+  TRM925442: "footings",
+  TRM930242: "rebar_slabs_int",
+  TRM930243: "rebar_slabs_ext",
+  TRM932142LP: "lpm_flag",
+  TRM932143LP: "lpm_flag",
+  TRM932144: "toppings",
+  TRM932244: "not_in_precon",
+  TRM935142LP: "lpm_flag",
+  TRM935144LP: "lpm_flag",
+  TRM935242: "col_int_35_transfer",
+  TRM935243: "ext_walls",
+  TRM935244: "parking_c1",
+  TRM935443: "footings",
+  TRM945142LP: "lpm_flag",
+  TRM945144LP: "lpm_flag",
+  TRM950142: "col_shear_parking_50",
+  TRM950143: "col_ext_50",
+  TRM950242: "col_shear_parking_50",
+  TRM955142: "col_int_55",
+  TRM955242: "col_int_55",
+  TRM965147: "col_parking_65"
+};
