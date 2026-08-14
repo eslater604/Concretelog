@@ -1,11 +1,22 @@
 const { ESTIMATE, LOCATION_MAP, WHOLE_BUILDING_BUDGET } = require("./estimate-data");
-const { PRECON_GROUPS, TRM_TO_GROUP } = require("./precon-crosswalk");
+const { PRECON_GROUPS, TRM_TO_GROUP, LOCATION_TO_GROUPS } = require("./precon-crosswalk");
+
+// Location decides the bucket; mix refines within it; LPM always flags.
+function resolveGroup(location, mixCode) {
+  const mixGroup = mixCode ? TRM_TO_GROUP[mixCode] : null;
+  if (mixGroup === "lpm_flag") return "lpm_flag";
+  const allowed = LOCATION_TO_GROUPS[location];
+  if (!allowed) return mixGroup || "unmapped_mix";
+  if (mixGroup && allowed.includes(mixGroup)) return mixGroup;
+  return allowed[0];
+}
 
 const SHEET_ID = "1726632799719300"; // 665 - 701 Kingsway - Concrete Log
 
 // Column titles we need, matched by title rather than index since Smartsheet
 // column order can shift if someone edits the sheet.
 const WANTED_COLUMNS = [
+  "Completed by Site Team",
   "Unit Price ($/m3)", "Volume (m3)", "Level", "Location Used", "Mix #1 Concrete Price",
   "(Mix #2) Unit Price ($/m3)", "(Mix #2) Volume (m3)", "(Mix #2) Level", "(Mix #2) Location Used", "Mix #2 Concrete Price",
   "(Mix #3) Unit Price ($/m3)", "(Mix #3) Volume (m3)", "(Mix #3) Level", "(Mix #3) Location Used", "Mix #3 Concrete Price"
@@ -40,6 +51,9 @@ exports.handler = async function (event) {
     const pours = [];
     for (const row of sheet.rows) {
       const cells = cellByColId(row);
+      // Only count pours confirmed by the site team - unchecked rows are
+      // future/tentative pours that may still change.
+      if (cells[colIdByTitle["Completed by Site Team"]] !== true) continue;
       const mixes = [
         ["Unit Price ($/m3)", "Volume (m3)", "Level", "Location Used", "Mix #1 Concrete Price", "Mix #1 Ordered"],
         ["(Mix #2) Unit Price ($/m3)", "(Mix #2) Volume (m3)", "(Mix #2) Level", "(Mix #2) Location Used", "Mix #2 Concrete Price", "(Mix #2) Ordered"],
@@ -111,7 +125,7 @@ exports.handler = async function (event) {
     // ---- Mix-level comparison: actual pours grouped by precon mix line ----
     const mixAgg = {};
     for (const p of pours) {
-      const groupKey = (p.mixCode && TRM_TO_GROUP[p.mixCode]) || "unmapped_mix";
+      const groupKey = resolveGroup(p.location, p.mixCode);
       if (!mixAgg[groupKey]) mixAgg[groupKey] = { vol: 0, cost: 0, mixes: {} };
       mixAgg[groupKey].vol += p.volume;
       mixAgg[groupKey].cost += p.price || p.volume * p.rate;
