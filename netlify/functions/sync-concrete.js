@@ -55,11 +55,11 @@ exports.handler = async function (event) {
       // future/tentative pours that may still change.
       if (cells[colIdByTitle["Completed by Site Team"]] !== true) continue;
       const mixes = [
-        ["Unit Price ($/m3)", "Volume (m3)", "Level", "Location Used", "Mix #1 Concrete Price", "Mix #1 Ordered"],
-        ["(Mix #2) Unit Price ($/m3)", "(Mix #2) Volume (m3)", "(Mix #2) Level", "(Mix #2) Location Used", "Mix #2 Concrete Price", "(Mix #2) Ordered"],
-        ["(Mix #3) Unit Price ($/m3)", "(Mix #3) Volume (m3)", "(Mix #3) Level", "(Mix #3) Location Used", "Mix #3 Concrete Price", "(Mix #3) Ordered"]
+        ["Unit Price ($/m3)", "Volume (m3)", "Level", "Location Used", "Mix #1 Concrete Price", "Mix #1 Ordered", ["M#1-Add #1 Unit Price", "M#1-Add #2 Unit Price", "M#1-Add #3 Unit Price", "M#1-Add #4 Unit Price"]],
+        ["(Mix #2) Unit Price ($/m3)", "(Mix #2) Volume (m3)", "(Mix #2) Level", "(Mix #2) Location Used", "Mix #2 Concrete Price", "(Mix #2) Ordered", ["M#2-Add #1 Unit Price", "M#2-Add #2 Unit Price", "M#2-Add #3 Unit Price", "M#2-Add #4 Unit Price"]],
+        ["(Mix #3) Unit Price ($/m3)", "(Mix #3) Volume (m3)", "(Mix #3) Level", "(Mix #3) Location Used", "Mix #3 Concrete Price", "(Mix #3) Ordered", ["M#3-Add #1 Unit Price", "M#3-Add #2 Unit Price", "M#3-Add #3 Unit Price", "M#3-Add #4 Unit Price"]]
       ];
-      for (const [rateKey, volKey, lvlKey, locKey, priceKey, orderedKey] of mixes) {
+      for (const [rateKey, volKey, lvlKey, locKey, priceKey, orderedKey, addKeys] of mixes) {
         const vol = num(cells[colIdByTitle[volKey]]);
         const level = cells[colIdByTitle[lvlKey]];
         const location = cells[colIdByTitle[locKey]];
@@ -68,12 +68,16 @@ exports.handler = async function (event) {
         // Picklist values look like "TRM935242 - 35MPA - INT. COLUMN..." -
         // the TRM code is the first token.
         const mixCode = orderedText ? String(orderedText).trim().split(/[\s-]/)[0] : null;
+        // Admixture charges logged against this mix slot (superplasticizer,
+        // PRA, delayset, winter handling, etc.)
+        const additives = addKeys.reduce((s, k) => s + num(cells[colIdByTitle[k]]), 0);
         pours.push({
           volume: vol,
           level: String(level),
           location: String(location),
           rate: num(cells[colIdByTitle[rateKey]]),
           price: num(cells[colIdByTitle[priceKey]]),
+          additives,
           mixCode
         });
       }
@@ -86,7 +90,7 @@ exports.handler = async function (event) {
       const key = p.level + "||" + category;
       if (!agg[key]) agg[key] = { level: p.level, category, actualVolume: 0, actualCost: 0 };
       agg[key].actualVolume += p.volume;
-      agg[key].actualCost += p.price || p.volume * p.rate;
+      agg[key].actualCost += (p.price || p.volume * p.rate) + p.additives;
     }
 
     // Blended actual $/m3 rate per category, pooled across all levels -
@@ -102,7 +106,7 @@ exports.handler = async function (event) {
       const estVol = (ESTIMATE[r.level] && ESTIMATE[r.level][r.category]) || 0;
       const rateInfo = rateByCategory[r.category];
       const rate = rateInfo && rateInfo.vol > 0 ? rateInfo.cost / rateInfo.vol : 0;
-      const estCost = r.category === "Blinding (not estimated)" || r.category === "Unmapped - review" ? 0 : estVol * rate;
+      const estCost = r.category === "Unmapped - review" ? 0 : estVol * rate;
       return {
         level: r.level,
         category: r.category,
@@ -118,9 +122,9 @@ exports.handler = async function (event) {
       (sum, cats) => sum + Object.values(cats).reduce((s, v) => s + v, 0), 0
     );
     const wholeBuildingActual = pours.reduce((s, p) => s + p.volume, 0);
-    const wholeBuildingActualCost = pours.reduce((s, p) => s + (p.price || p.volume * p.rate), 0);
+    const wholeBuildingActualCost = pours.reduce((s, p) => s + (p.price || p.volume * p.rate) + p.additives, 0);
     const wholeBuildingEstimateCost = WHOLE_BUILDING_BUDGET;
-    const activeRows = rows.filter(r => r.category !== "Blinding (not estimated)" && r.category !== "Unmapped - review");
+    const activeRows = rows.filter(r => r.category !== "Unmapped - review");
 
     // ---- Mix-level comparison: actual pours grouped by precon mix line ----
     const mixAgg = {};
@@ -128,7 +132,7 @@ exports.handler = async function (event) {
       const groupKey = resolveGroup(p.location, p.mixCode);
       if (!mixAgg[groupKey]) mixAgg[groupKey] = { vol: 0, cost: 0, mixes: {} };
       mixAgg[groupKey].vol += p.volume;
-      mixAgg[groupKey].cost += p.price || p.volume * p.rate;
+      mixAgg[groupKey].cost += (p.price || p.volume * p.rate) + p.additives;
       if (p.mixCode) mixAgg[groupKey].mixes[p.mixCode] = true;
     }
     const mixComparison = Object.entries(mixAgg).map(([key, agg2]) => {
