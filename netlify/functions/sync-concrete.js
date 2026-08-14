@@ -1,4 +1,5 @@
 const { ESTIMATE, LOCATION_MAP, WHOLE_BUILDING_BUDGET } = require("./estimate-data");
+const { PRECON_GROUPS, TRM_TO_GROUP } = require("./precon-crosswalk");
 
 const SHEET_ID = "1726632799719300"; // 665 - 701 Kingsway - Concrete Log
 
@@ -40,21 +41,26 @@ exports.handler = async function (event) {
     for (const row of sheet.rows) {
       const cells = cellByColId(row);
       const mixes = [
-        ["Unit Price ($/m3)", "Volume (m3)", "Level", "Location Used", "Mix #1 Concrete Price"],
-        ["(Mix #2) Unit Price ($/m3)", "(Mix #2) Volume (m3)", "(Mix #2) Level", "(Mix #2) Location Used", "Mix #2 Concrete Price"],
-        ["(Mix #3) Unit Price ($/m3)", "(Mix #3) Volume (m3)", "(Mix #3) Level", "(Mix #3) Location Used", "Mix #3 Concrete Price"]
+        ["Unit Price ($/m3)", "Volume (m3)", "Level", "Location Used", "Mix #1 Concrete Price", "Mix #1 Ordered"],
+        ["(Mix #2) Unit Price ($/m3)", "(Mix #2) Volume (m3)", "(Mix #2) Level", "(Mix #2) Location Used", "Mix #2 Concrete Price", "(Mix #2) Ordered"],
+        ["(Mix #3) Unit Price ($/m3)", "(Mix #3) Volume (m3)", "(Mix #3) Level", "(Mix #3) Location Used", "Mix #3 Concrete Price", "(Mix #3) Ordered"]
       ];
-      for (const [rateKey, volKey, lvlKey, locKey, priceKey] of mixes) {
+      for (const [rateKey, volKey, lvlKey, locKey, priceKey, orderedKey] of mixes) {
         const vol = num(cells[colIdByTitle[volKey]]);
         const level = cells[colIdByTitle[lvlKey]];
         const location = cells[colIdByTitle[locKey]];
         if (!vol || !level || !location) continue;
+        const orderedText = cells[colIdByTitle[orderedKey]];
+        // Picklist values look like "TRM935242 - 35MPA - INT. COLUMN..." -
+        // the TRM code is the first token.
+        const mixCode = orderedText ? String(orderedText).trim().split(/[\s-]/)[0] : null;
         pours.push({
           volume: vol,
           level: String(level),
           location: String(location),
           rate: num(cells[colIdByTitle[rateKey]]),
-          price: num(cells[colIdByTitle[priceKey]])
+          price: num(cells[colIdByTitle[priceKey]]),
+          mixCode
         });
       }
     }
@@ -102,9 +108,36 @@ exports.handler = async function (event) {
     const wholeBuildingEstimateCost = WHOLE_BUILDING_BUDGET;
     const activeRows = rows.filter(r => r.category !== "Blinding (not estimated)" && r.category !== "Unmapped - review");
 
+    // ---- Mix-level comparison: actual pours grouped by precon mix line ----
+    const mixAgg = {};
+    for (const p of pours) {
+      const groupKey = (p.mixCode && TRM_TO_GROUP[p.mixCode]) || "unmapped_mix";
+      if (!mixAgg[groupKey]) mixAgg[groupKey] = { vol: 0, cost: 0, mixes: {} };
+      mixAgg[groupKey].vol += p.volume;
+      mixAgg[groupKey].cost += p.price || p.volume * p.rate;
+      if (p.mixCode) mixAgg[groupKey].mixes[p.mixCode] = true;
+    }
+    const mixComparison = Object.entries(mixAgg).map(([key, agg2]) => {
+      const g = PRECON_GROUPS[key] || { label: "Unrecognized mix code - review", preconLines: "none", volume: 0, flag: "review" };
+      return {
+        group: g.label,
+        preconLines: g.preconLines,
+        preconVolume: round(g.volume),
+        actualVolume: round(agg2.vol),
+        actualCost: round(agg2.cost),
+        mixesUsed: Object.keys(agg2.mixes).sort(),
+        pctUsed: g.volume > 0 ? Math.round((agg2.vol / g.volume) * 1000) / 10 : null,
+        flag: g.flag || null
+      };
+    }).sort((a, b) => {
+      if (!!a.flag !== !!b.flag) return a.flag ? -1 : 1;
+      return (b.pctUsed ?? -1) - (a.pctUsed ?? -1);
+    });
+
     return respond(200, {
       updatedAt: new Date().toISOString(),
       rows,
+      mixComparison,
       totals: {
         activeEstimate: round(rows.reduce((s, r) => s + r.estimateVolume, 0)),
         activeActual: round(activeRows.reduce((s, r) => s + r.actualVolume, 0)),
