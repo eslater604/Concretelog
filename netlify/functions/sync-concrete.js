@@ -88,9 +88,10 @@ exports.handler = async function (event) {
     for (const p of pours) {
       const category = LOCATION_MAP[p.location] || "Unmapped - review";
       const key = p.level + "||" + category;
-      if (!agg[key]) agg[key] = { level: p.level, category, actualVolume: 0, actualCost: 0 };
+      if (!agg[key]) agg[key] = { level: p.level, category, actualVolume: 0, actualCost: 0, mixes: {} };
       agg[key].actualVolume += p.volume;
       agg[key].actualCost += (p.price || p.volume * p.rate) + p.additives;
+      if (p.mixCode) agg[key].mixes[p.mixCode] = true;
     }
 
     // Blended actual $/m3 rate per category, pooled across all levels -
@@ -114,7 +115,8 @@ exports.handler = async function (event) {
         actualVolume: round(r.actualVolume),
         estimateCost: round(estCost),
         actualCost: round(r.actualCost),
-        pctUsed: estVol > 0 ? Math.round((r.actualVolume / estVol) * 1000) / 10 : null
+        pctUsed: estVol > 0 ? Math.round((r.actualVolume / estVol) * 1000) / 10 : null,
+        mixesUsed: Object.keys(r.mixes).sort()
       };
     }).sort((a, b) => (b.pctUsed ?? -1) - (a.pctUsed ?? -1));
 
