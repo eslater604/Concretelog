@@ -482,7 +482,10 @@ let _allRows = [];
 function filterRows() {
   const lvl = document.getElementById('sel-level').value;
   const cat = document.getElementById('sel-cat').value;
-  const filtered = _allRows.filter(r => (!lvl || r.level === lvl) && (!cat || r.category === cat));
+  const filtered = _allRows.filter(r =>
+    (!lvl || lvl === 'ALL' || r.level === lvl) &&
+    (!cat || cat === 'ALL' || r.category === cat)
+  );
   renderDonutGrid(filtered);
 }
 
@@ -492,8 +495,8 @@ function populateFilters(rows) {
   const selLvl = document.getElementById('sel-level');
   const selCat = document.getElementById('sel-cat');
   const curLvl = selLvl.value; const curCat = selCat.value;
-  selLvl.innerHTML = '<option value="">Select level</option>' + levels.map(l => `<option${l===curLvl?' selected':''}>${l}</option>`).join('');
-  selCat.innerHTML = '<option value="">Select type</option>' + cats.map(c => `<option${c===curCat?' selected':''}>${c}</option>`).join('');
+  selLvl.innerHTML = '<option value="">Select level</option><option value="ALL">All levels</option>' + levels.map(l => `<option${l===curLvl?' selected':''}>${l}</option>`).join('');
+  selCat.innerHTML = '<option value="">Select type</option><option value="ALL">All types</option>' + cats.map(c => `<option${c===curCat?' selected':''}>${c}</option>`).join('');
 }
 
 function renderDonutGrid(rows) {
@@ -504,6 +507,7 @@ function renderDonutGrid(rows) {
     grid.innerHTML = '<div class="empty">Select a level or type above to view data.</div>';
     return;
   }
+  if (!rows.length) { grid.innerHTML = '<div class="empty">No data matches the selected filters.</div>'; return; }
   grid.innerHTML = rows.map(r => {
     const pct = r.estimateVolume > 0 ? Math.round((r.actualVolume / r.estimateVolume) * 1000) / 10 : null;
     const t = rowTheme(pct);
