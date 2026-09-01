@@ -305,6 +305,9 @@
       <select class="db-select" id="sel-cat" onchange="filterRows()">
         <option value="">Select type</option>
       </select>
+      <select class="db-select" id="sel-mix" onchange="filterRows()">
+        <option value="">Select mix</option>
+      </select>
     </div>
     <div class="db-grid" id="rows"><div class="empty">Select a level or type above to view data.</div></div>
 
@@ -482,9 +485,11 @@ let _allRows = [];
 function filterRows() {
   const lvl = document.getElementById('sel-level').value;
   const cat = document.getElementById('sel-cat').value;
+  const mix = document.getElementById('sel-mix').value;
   const filtered = _allRows.filter(r =>
     (!lvl || lvl === 'ALL' || r.level === lvl) &&
-    (!cat || cat === 'ALL' || r.category === cat)
+    (!cat || cat === 'ALL' || r.category === cat) &&
+    (!mix || mix === 'ALL' || (r.mixesUsed || []).includes(mix))
   );
   renderDonutGrid(filtered);
 }
@@ -492,18 +497,22 @@ function filterRows() {
 function populateFilters(rows) {
   const levels = [...new Set(rows.map(r => r.level))];
   const cats = [...new Set(rows.map(r => r.category))];
+  const mixes = [...new Set(rows.flatMap(r => r.mixesUsed || []))].sort();
   const selLvl = document.getElementById('sel-level');
   const selCat = document.getElementById('sel-cat');
-  const curLvl = selLvl.value; const curCat = selCat.value;
+  const selMix = document.getElementById('sel-mix');
+  const curLvl = selLvl.value; const curCat = selCat.value; const curMix = selMix.value;
   selLvl.innerHTML = '<option value="">Select level</option><option value="ALL">All levels</option>' + levels.map(l => `<option${l===curLvl?' selected':''}>${l}</option>`).join('');
   selCat.innerHTML = '<option value="">Select type</option><option value="ALL">All types</option>' + cats.map(c => `<option${c===curCat?' selected':''}>${c}</option>`).join('');
+  selMix.innerHTML = '<option value="">Select mix</option><option value="ALL">All mixes</option>' + mixes.map(m => `<option${m===curMix?' selected':''}>${m}</option>`).join('');
 }
 
 function renderDonutGrid(rows) {
   const grid = document.getElementById('rows');
   const lvl = document.getElementById('sel-level').value;
   const cat = document.getElementById('sel-cat').value;
-  if (!lvl && !cat) {
+  const mix = document.getElementById('sel-mix').value;
+  if (!lvl && !cat && !mix) {
     grid.innerHTML = '<div class="empty">Select a level or type above to view data.</div>';
     return;
   }
