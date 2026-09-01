@@ -215,24 +215,25 @@
     border-bottom: 1px solid var(--border);
   }
   .row:last-child { border-bottom: none; }
-  .row-icon {
-    width: 32px; height: 32px;
-    border-radius: 8px;
-    background: var(--bg);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700; color: var(--text-secondary);
-    flex-shrink: 0;
-  }
   .row-body { flex: 1; min-width: 0; }
-  .row-top {
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 6px; font-size: 14px;
-  }
+  .row-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; font-size: 14px; }
   .row-title { font-weight: 700; }
   .row-pct { font-weight: 700; font-size: 13px; }
   .bar-track { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
   .bar-fill { height: 100%; border-radius: 3px; }
   .row-bottom { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
+  .db-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+  .db-select { font-size: 13px; padding: 7px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; }
+  .db-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+  .db-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
+  .db-row-inner { display: flex; align-items: center; gap: 14px; }
+  .db-pie-wrap { position: relative; width: 96px; height: 96px; flex-shrink: 0; }
+  .db-pie-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; text-align: center; line-height: 1.2; }
+  .db-pie-pct { font-size: 14px; font-weight: 700; }
+  .db-pie-status { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+  .db-card-title { font-size: 13px; font-weight: 700; color: var(--text); margin: 0 0 2px; }
+  .db-card-sub { font-size: 11px; color: var(--text-muted); margin: 0 0 8px; }
+  .db-vol { font-size: 12px; color: var(--text-secondary); margin: 3px 0; }
   footer { margin-top: 1.5rem; font-size: 12px; color: var(--text-muted); }
   .empty { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 14px; }
 </style>
@@ -297,9 +298,15 @@
     <div class="metrics metrics-status" id="status-metrics"></div>
 
     <p class="section-label">By level and category</p>
-    <div class="card">
-      <div id="rows"><div class="empty">Click "Sync now" to load the latest data.</div></div>
+    <div class="db-toolbar">
+      <select class="db-select" id="sel-level" onchange="filterRows()">
+        <option value="">All levels</option>
+      </select>
+      <select class="db-select" id="sel-cat" onchange="filterRows()">
+        <option value="">All categories</option>
+      </select>
     </div>
+    <div class="db-grid" id="rows"><div class="empty">Click "Sync now" to load the latest data.</div></div>
 
     <p class="section-label" style="margin-top:1.5rem;">By precon estimate mix line <span style="text-transform:none;letter-spacing:0;font-weight:400;">&mdash; actual mixes ordered vs the takeoff's mix list; some precon lines are combined where one mix serves several</span></p>
     <div class="card">
@@ -442,36 +449,86 @@ function render(data) {
     </div>
   `;
 
-  const rowsHtml = rows.map(r => {
-    const pct = r.pctUsed;
-    const over = pct !== null && pct > 100;
-    const near = pct !== null && pct >= 85 && pct <= 100;
-    const barColor = pct === null ? 'var(--text-muted)' : (over ? '#e24b4a' : (near ? '#ef9f27' : '#639922'));
-    const pctColor = pct === null ? 'var(--text-muted)' : (over ? 'var(--red)' : (near ? 'var(--amber)' : 'var(--text-secondary)'));
-    const barWidth = pct === null ? 100 : Math.min(pct, 100);
-    const pctLabel = pct === null ? 'no estimate' : pct.toFixed(1) + '%';
-    const initials = r.category.slice(0, 2).toUpperCase();
+  _allRows = rows;
+  populateFilters(rows);
+  filterRows();
+  renderMixComparison(data.mixComparison || []);
+}
+
+const _charts = {};
+
+function rowTheme(pct) {
+  if (pct === null) return { solid:'#3987e5', light:'#e6f1fb', color:'#185fa5', label:'no estimate' };
+  if (pct > 100)   return { solid:'#e24b4a', light:'#fcebeb', color:'#a32d2d', label:'over estimate' };
+  if (pct >= 85)   return { solid:'#ef9f27', light:'#faeeda', color:'#854f0b', label:'near estimate' };
+  return           { solid:'#639922', light:'#eaf3de', color:'#3b6d11', label:'on track' };
+}
+
+function drawDonut(id, pct) {
+  if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  const capped = pct === null ? 0 : Math.min(pct / 100, 1);
+  const { solid, light } = rowTheme(pct);
+  _charts[id] = new Chart(canvas, {
+    type: 'doughnut',
+    data: { datasets: [{ data: [capped, 1 - capped], backgroundColor: [solid, light], borderWidth: 0, hoverOffset: 0 }] },
+    options: { responsive: false, cutout: '62%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, animation: { duration: 400 } }
+  });
+}
+
+let _allRows = [];
+
+function filterRows() {
+  const lvl = document.getElementById('sel-level').value;
+  const cat = document.getElementById('sel-cat').value;
+  const filtered = _allRows.filter(r => (!lvl || r.level === lvl) && (!cat || r.category === cat));
+  renderDonutGrid(filtered);
+}
+
+function populateFilters(rows) {
+  const levels = [...new Set(rows.map(r => r.level))];
+  const cats = [...new Set(rows.map(r => r.category))];
+  const selLvl = document.getElementById('sel-level');
+  const selCat = document.getElementById('sel-cat');
+  const curLvl = selLvl.value; const curCat = selCat.value;
+  selLvl.innerHTML = '<option value="">All levels</option>' + levels.map(l => `<option${l===curLvl?' selected':''}>${l}</option>`).join('');
+  selCat.innerHTML = '<option value="">All categories</option>' + cats.map(c => `<option${c===curCat?' selected':''}>${c}</option>`).join('');
+}
+
+function renderDonutGrid(rows) {
+  const grid = document.getElementById('rows');
+  if (!rows.length) { grid.innerHTML = '<div class="empty">No data matches the selected filters.</div>'; return; }
+  grid.innerHTML = rows.map(r => {
+    const pct = r.estimateVolume > 0 ? Math.round((r.actualVolume / r.estimateVolume) * 1000) / 10 : null;
+    const t = rowTheme(pct);
+    const pctLabel = pct === null ? '\u2014' : pct.toFixed(1) + '%';
+    const rem = r.estimateVolume > 0 ? Math.max(0, r.estimateVolume - r.actualVolume).toLocaleString(undefined,{maximumFractionDigits:1}) : '\u2014';
+    const uid = `donut-${r.level}-${r.category.replace(/\W/g,'_')}`;
     return `
-      <div class="row">
-        <div class="row-icon">${initials}</div>
-        <div class="row-body">
-          <div class="row-top">
-            <span class="row-title">${r.level} ${r.category}</span>
-            <span class="row-pct" style="color:${pctColor}">${pctLabel}</span>
+      <div class="db-card">
+        <div class="db-row-inner">
+          <div class="db-pie-wrap">
+            <canvas id="${uid}" width="96" height="96" role="img"
+              aria-label="${r.level} ${r.category}: ${pctLabel} used, ${t.label}">${pctLabel}</canvas>
+            <div class="db-pie-center">
+              <span class="db-pie-pct" style="color:${t.color}">${pctLabel}</span>
+              <span class="db-pie-status" style="color:${t.color}">${t.label}</span>
+            </div>
           </div>
-          <div class="bar-track"><div class="bar-fill" style="width:${barWidth}%;background:${barColor};"></div></div>
-          <div class="row-bottom">
-            <span>${r.actualVolume.toLocaleString()} of ${r.estimateVolume ? r.estimateVolume.toLocaleString() : '\u2014'} m3</span>
-            <span>$${r.actualCost.toLocaleString()}</span>
+          <div style="flex:1;min-width:0;">
+            <p class="db-card-title">${r.level} ${r.category}</p>
+            <p class="db-card-sub">$${r.actualCost.toLocaleString()} spent</p>
+            <p class="db-vol">${r.actualVolume.toLocaleString()} <span style="color:var(--text-muted)">of ${r.estimateVolume.toLocaleString()} m\u00b3</span></p>
+            <p class="db-vol">Remaining: <strong>${rem} m\u00b3</strong></p>
           </div>
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
-
-  document.getElementById('rows').innerHTML = rowsHtml || '<div class="empty">No pours logged yet.</div>';
-
-  renderMixComparison(data.mixComparison || []);
+  rows.forEach(r => {
+    const pct = r.estimateVolume > 0 ? Math.round((r.actualVolume / r.estimateVolume) * 1000) / 10 : null;
+    drawDonut(`donut-${r.level}-${r.category.replace(/\W/g,'_')}`, pct);
+  });
 }
 
 function renderMixComparison(mixRows) {
@@ -484,7 +541,7 @@ function renderMixComparison(mixRows) {
     const barColor = flagged ? '#e24b4a' : (pct === null ? 'var(--text-muted)' : (over ? '#e24b4a' : (near ? '#ef9f27' : '#639922')));
     const pctColor = flagged ? 'var(--red)' : (pct === null ? 'var(--text-muted)' : (over ? 'var(--red)' : (near ? 'var(--amber)' : 'var(--text-secondary)')));
     const barWidth = flagged ? 100 : (pct === null ? 100 : Math.min(pct, 100));
-    const pctLabel = flagged ? '\u26a0 review' : (pct === null ? 'no precon line' : pct.toFixed(1) + '%');
+    const pctLabel = flagged ? '\u26a0 review' : (pct === null ? '0 m\u00b3 estimated' : pct.toFixed(1) + '%');
     const linesNote = r.preconLines !== 'none' ? ' <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(precon ' + r.preconLines + ')</span>' : '';
     return `
       <div class="row">
@@ -507,5 +564,6 @@ function renderMixComparison(mixRows) {
 
 sync();
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 </body>
 </html>
