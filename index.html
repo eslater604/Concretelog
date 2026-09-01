@@ -300,13 +300,13 @@
     <p class="section-label">By level and category</p>
     <div class="db-toolbar">
       <select class="db-select" id="sel-level" onchange="filterRows()">
-        <option value="">All levels</option>
+        <option value="">Select level</option>
       </select>
       <select class="db-select" id="sel-cat" onchange="filterRows()">
-        <option value="">All categories</option>
+        <option value="">Select type</option>
       </select>
     </div>
-    <div class="db-grid" id="rows"><div class="empty">Click "Sync now" to load the latest data.</div></div>
+    <div class="db-grid" id="rows"><div class="empty">Select a level or type above to view data.</div></div>
 
     <p class="section-label" style="margin-top:1.5rem;">By precon estimate mix line <span style="text-transform:none;letter-spacing:0;font-weight:400;">&mdash; actual mixes ordered vs the takeoff's mix list; some precon lines are combined where one mix serves several</span></p>
     <div class="card">
@@ -492,13 +492,18 @@ function populateFilters(rows) {
   const selLvl = document.getElementById('sel-level');
   const selCat = document.getElementById('sel-cat');
   const curLvl = selLvl.value; const curCat = selCat.value;
-  selLvl.innerHTML = '<option value="">All levels</option>' + levels.map(l => `<option${l===curLvl?' selected':''}>${l}</option>`).join('');
-  selCat.innerHTML = '<option value="">All categories</option>' + cats.map(c => `<option${c===curCat?' selected':''}>${c}</option>`).join('');
+  selLvl.innerHTML = '<option value="">Select level</option>' + levels.map(l => `<option${l===curLvl?' selected':''}>${l}</option>`).join('');
+  selCat.innerHTML = '<option value="">Select type</option>' + cats.map(c => `<option${c===curCat?' selected':''}>${c}</option>`).join('');
 }
 
 function renderDonutGrid(rows) {
   const grid = document.getElementById('rows');
-  if (!rows.length) { grid.innerHTML = '<div class="empty">No data matches the selected filters.</div>'; return; }
+  const lvl = document.getElementById('sel-level').value;
+  const cat = document.getElementById('sel-cat').value;
+  if (!lvl && !cat) {
+    grid.innerHTML = '<div class="empty">Select a level or type above to view data.</div>';
+    return;
+  }
   grid.innerHTML = rows.map(r => {
     const pct = r.estimateVolume > 0 ? Math.round((r.actualVolume / r.estimateVolume) * 1000) / 10 : null;
     const t = rowTheme(pct);
