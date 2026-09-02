@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Marcon — 701 Kingsway Pour Map</title>
+<style>
+:root {
+  --brand-red: #B3261E;
+  --brand-red-light: #C5534F;
+  --accent-orange: #E1601C;
+  --bg: #F3F2EE;
+  --card: #ffffff;
+  --border: #E4E2DC;
+  --text: #1c1c1a;
+  --text-secondary: #6b6a64;
+  --text-muted: #98978f;
+  --green: #639922;
+  --amber: #ef9f27;
+  --red: #e24b4a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* Header */
+header { background: var(--brand-red); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
+.logo-badge { background: #fff; border-radius: 6px; padding: 5px 12px 4px; display: flex; flex-direction: column; align-items: center; line-height: 1; flex-shrink: 0; }
+.logo-badge img { height: 22px; display: block; }
+.header-text h1 { font-size: 17px; font-weight: 800; color: #fff; }
+.header-text p { font-size: 12px; color: rgba(255,255,255,0.8); }
+.eyebrow { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; color: rgba(255,255,255,0.85); text-transform: uppercase; margin-bottom: 2px; }
+.eyebrow .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-orange); }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.btn { border: none; border-radius: 999px; padding: 7px 16px; font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: 0.02em; }
+.btn-primary { background: #fff; color: var(--brand-red); }
+.btn-primary:hover { background: #f0f0f0; }
+.btn-secondary { background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.4); }
+.btn-secondary:hover { background: rgba(255,255,255,0.3); }
+.btn-danger { background: #e24b4a; color: #fff; }
+.btn-sm { padding: 5px 12px; font-size: 11px; }
+
+/* Toolbar */
+.toolbar { background: #fff; border-bottom: 1px solid var(--border); padding: 8px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap; }
+.tool-group { display: flex; gap: 6px; align-items: center; }
+.tool-btn { border: 1px solid var(--border); background: var(--bg); border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; gap: 5px; }
+.tool-btn:hover { background: var(--border); }
+.tool-btn.active { background: var(--brand-red); color: #fff; border-color: var(--brand-red); }
+.separator { width: 1px; height: 24px; background: var(--border); }
+select.tool-select { font-size: 12px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
+#status-bar { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+/* Legend */
+.legend { display: flex; gap: 14px; padding: 6px 16px; background: #fff; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-secondary); align-items: center; flex-shrink: 0; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-swatch { width: 28px; height: 10px; border-radius: 3px; opacity: 0.7; }
+
+/* Main layout */
+.main { display: flex; flex: 1; overflow: hidden; }
+
+/* Canvas area */
+.canvas-wrap { flex: 1; overflow: auto; position: relative; background: #888; }
+#drawing-canvas { display: block; cursor: crosshair; }
+.canvas-wrap.mode-select #drawing-canvas { cursor: default; }
+.canvas-wrap.mode-pan #drawing-canvas { cursor: grab; }
+
+/* Side panel */
+.side-panel { width: 280px; background: var(--card); border-left: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+.side-panel-header { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+.side-panel-body { flex: 1; overflow-y: auto; padding: 12px 14px; }
+.panel-empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 2rem 1rem; }
+.zone-info-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; margin: 10px 0 3px; }
+.zone-info-value { font-size: 13px; color: var(--text); font-weight: 500; }
+.pour-card { background: var(--bg); border-radius: 8px; padding: 10px; margin-bottom: 8px; border: 1px solid var(--border); }
+.pour-card-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+.pour-card-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); margin: 2px 0; }
+.sync-note { font-size: 11px; color: var(--text-muted); margin-top: 10px; }
+.badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.badge-green { background: #eaf3de; color: #3b6d11; }
+.badge-amber { background: #faeeda; color: #854f0b; }
+.badge-red { background: #fcebeb; color: #a32d2d; }
+.badge-grey { background: var(--border); color: var(--text-secondary); }
+
+/* Zone form overlay */
+.zone-form-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; display: flex; align-items: center; justify-content: center; }
+.zone-form { background: #fff; border-radius: 12px; padding: 1.5rem; width: 340px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+.zone-form h3 { font-size: 15px; font-weight: 700; margin-bottom: 1rem; }
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.form-group input, .form-group select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; color: var(--text); background: var(--bg); }
+.form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo-badge">
+      <img src="marcon-logo.png" alt="Marcon" onerror="this.parentElement.innerHTML='<span style=\'font-size:16px;font-weight:800;font-style:italic;color:#EC2422\'>MARCON</span>'"/>
+    </div>
+    <div class="header-text">
+      <div class="eyebrow"><span class="dot"></span>Marcon Construction Ltd.</div>
+      <h1>701 Kingsway &mdash; Pour Map</h1>
+      <p>Level P2 / Foundation</p>
+    </div>
+  </div>
+  <div class="header-actions">
+    <span id="sync-status" style="font-size:12px;color:rgba(255,255,255,0.8);">Not synced</span>
+    <button class="btn btn-secondary" onclick="syncSmartsheet()">&#8635; Sync</button>
+    <a href="index.html" class="btn btn-secondary">Dashboard</a>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="tool-group">
+    <button class="tool-btn" id="tool-select" onclick="setTool('select')" title="Select / pan">&#9654; Select</button>
+    <button class="tool-btn active" id="tool-draw" onclick="setTool('draw')" title="Draw zone polygon">&#9651; Draw zone</button>
+  </div>
+  <div class="separator"></div>
+  <div class="tool-group">
+    <select class="tool-select" id="zone-level">
+      <option value="P2">P2</option>
+      <option value="P1">P1</option>
+      <option value="P1a">P1a</option>
+    </select>
+    <select class="tool-select" id="zone-area">
+      <option value="Z1">Zone 1</option>
+      <option value="Z2">Zone 2</option>
+      <option value="Z3">Zone 3</option>
+    </select>
+    <select class="tool-select" id="zone-type">
+      <option value="Footings">Footings</option>
+      <option value="Walls">Walls</option>
+      <option value="Columns">Columns</option>
+      <option value="Slabs on grade">Slabs on grade</option>
+      <option value="Suspended slab">Suspended slab</option>
+      <option value="Blinding">Blinding</option>
+    </select>
+  </div>
+  <div class="separator"></div>
+  <div class="tool-group">
+    <button class="tool-btn btn-sm" onclick="clearLastPoint()" title="Undo last point">&#8592; Undo point</button>
+    <button class="tool-btn btn-sm" onclick="cancelDraw()">&#215; Cancel</button>
+  </div>
+  <div class="separator"></div>
+  <div class="tool-group">
+    <button class="tool-btn btn-sm" onclick="zoomIn()">&#43; Zoom</button>
+    <button class="tool-btn btn-sm" onclick="zoomOut()">&#8722; Zoom</button>
+    <button class="tool-btn btn-sm" onclick="resetZoom()">&#9654; Fit</button>
+  </div>
+  <span id="status-bar">Click to place zone points &mdash; double-click to close</span>
+</div>
+
+<div class="legend">
+  <strong style="font-size:11px;">Zone status:</strong>
+  <div class="legend-item"><span class="legend-swatch" style="background:#639922;"></span>On track</div>
+  <div class="legend-item"><span class="legend-swatch" style="background:#ef9f27;"></span>Near estimate (85–100%)</div>
+  <div class="legend-item"><span class="legend-swatch" style="background:#e24b4a;"></span>Over estimate</div>
+  <div class="legend-item"><span class="legend-swatch" style="background:#3987e5;"></span>No estimate</div>
+  <div class="legend-item"><span class="legend-swatch" style="background:#c8c6be;border:1px dashed #999;"></span>Not yet poured</div>
+</div>
+
+<div class="main">
+  <div class="canvas-wrap" id="canvas-wrap">
+    <canvas id="drawing-canvas"></canvas>
+  </div>
+
+  <div class="side-panel">
+    <div class="side-panel-header">
+      <span id="panel-title">Zone details</span>
+      <button class="tool-btn btn-sm" id="delete-btn" style="display:none;background:#fcebeb;color:#a32d2d;border-color:#fcc;" onclick="deleteSelectedZone()">Delete</button>
+    </div>
+    <div class="side-panel-body" id="panel-body">
+      <p class="panel-empty">Select a zone on the drawing to see pour details, or use "Draw zone" to add a new zone.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Zone naming form -->
+<div class="zone-form-overlay" id="zone-form-overlay" style="display:none;">
+  <div class="zone-form">
+    <h3>Name this zone</h3>
+    <div class="form-group">
+      <label>Zone ID (auto-generated)</label>
+      <input type="text" id="form-zone-id" readonly style="color:var(--text-muted);"/>
+    </div>
+    <div class="form-group">
+      <label>Label (optional — shown on map)</label>
+      <input type="text" id="form-zone-label" placeholder="e.g. Z1 North Footings"/>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <input type="text" id="form-zone-notes" placeholder="Optional note"/>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" style="background:var(--bg);color:var(--text);border:1px solid var(--border);" onclick="cancelZoneForm()">Cancel</button>
+      <button class="btn btn-primary" style="background:var(--brand-red);color:#fff;" onclick="saveZone()">Save zone</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const DRAWING_W = 1536;
+const DRAWING_H = 1382;
+const SMARTSHEET_ENDPOINT = '/.netlify/functions/sync-concrete';
+
+// Zone type colours (fill)
+const TYPE_COLORS = {
+  'Footings':       '#e8715a',
+  'Walls':          '#e8a858',
+  'Columns':        '#5ab8e8',
+  'Slabs on grade': '#7ec8a0',
+  'Suspended slab': '#a07ec8',
+  'Blinding':       '#c8c07e',
+};
+
+// ── State ────────────────────────────────────────────────────────────────────
+let zones = [];           // [{id, label, level, area, type, points, pours:[]}]
+let currentPoints = [];   // points being drawn
+let selectedZone = null;
+let tool = 'draw';
+let scale = 1;
+let smartsheetData = null;
+let pendingZone = null;   // zone awaiting name confirmation
+
+// ── Canvas setup ─────────────────────────────────────────────────────────────
+const canvas = document.getElementById('drawing-canvas');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('canvas-wrap');
+const bg = new Image();
+bg.src = 'P2_FDN_crop.png';
+bg.onload = () => { fitToWindow(); loadZones(); render(); };
+
+function fitToWindow() {
+  const ww = wrap.clientWidth, wh = wrap.clientHeight;
+  scale = Math.min(ww / DRAWING_W, wh / DRAWING_H);
+  resizeCanvas();
+}
+
+function resizeCanvas() {
+  canvas.width  = Math.round(DRAWING_W * scale);
+  canvas.height = Math.round(DRAWING_H * scale);
+  render();
+}
+
+function zoomIn()    { scale = Math.min(scale * 1.25, 4); resizeCanvas(); }
+function zoomOut()   { scale = Math.max(scale * 0.8, 0.2); resizeCanvas(); }
+function resetZoom() { fitToWindow(); }
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+
+  // Draw saved zones
+  zones.forEach(z => drawZone(z, z === selectedZone));
+
+  // Draw in-progress polygon
+  if (currentPoints.length > 0) {
+    ctx.beginPath();
+    ctx.moveTo(currentPoints[0].x * scale, currentPoints[0].y * scale);
+    currentPoints.forEach(p => ctx.lineTo(p.x * scale, p.y * scale));
+    ctx.strokeStyle = '#1a6bff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    currentPoints.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x * scale, p.y * scale, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#1a6bff';
+      ctx.fill();
+    });
+  }
+}
+
+function drawZone(z, selected) {
+  if (z.points.length < 3) return;
+  const status = getZoneStatus(z);
+  const fillColor = statusFill(status, z.type);
+  const strokeColor = selected ? '#1a6bff' : statusStroke(status, z.type);
+
+  ctx.beginPath();
+  ctx.moveTo(z.points[0].x * scale, z.points[0].y * scale);
+  z.points.forEach(p => ctx.lineTo(p.x * scale, p.y * scale));
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = selected ? 3 : 2;
+  ctx.setLineDash(selected ? [] : []);
+  ctx.stroke();
+
+  // Label
+  const cx = z.points.reduce((s, p) => s + p.x, 0) / z.points.length;
+  const cy = z.points.reduce((s, p) => s + p.y, 0) / z.points.length;
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.font = `bold ${Math.round(11 * scale)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lbl = z.label || `${z.level}-${z.area}-${z.type}`;
+  ctx.fillText(lbl, cx * scale, cy * scale);
+}
+
+function getZoneStatus(z) {
+  if (!smartsheetData || !smartsheetData.rows) return 'empty';
+  const match = smartsheetData.rows.find(r =>
+    r.level === z.level && r.category === z.type
+  );
+  if (!match) return 'empty';
+  if (match.pctUsed === null) return 'no-estimate';
+  if (match.pctUsed > 100) return 'over';
+  if (match.pctUsed >= 85) return 'near';
+  return 'ok';
+}
+
+function statusFill(status, type) {
+  const base = TYPE_COLORS[type] || '#999';
+  if (status === 'empty') return hexAlpha(base, 0.15);
+  if (status === 'no-estimate') return hexAlpha('#3987e5', 0.35);
+  if (status === 'over') return hexAlpha('#e24b4a', 0.45);
+  if (status === 'near') return hexAlpha('#ef9f27', 0.45);
+  return hexAlpha('#639922', 0.40);
+}
+
+function statusStroke(status, type) {
+  if (status === 'empty') return '#aaa';
+  if (status === 'no-estimate') return '#3987e5';
+  if (status === 'over') return '#e24b4a';
+  if (status === 'near') return '#ef9f27';
+  return '#639922';
+}
+
+function hexAlpha(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// ── Input ────────────────────────────────────────────────────────────────────
+canvas.addEventListener('click', e => {
+  const {x, y} = canvasToDrawing(e);
+  if (tool === 'draw') {
+    currentPoints.push({x, y});
+    render();
+    setStatus(`Point ${currentPoints.length} placed — double-click to close zone`);
+  } else if (tool === 'select') {
+    const hit = zones.findLast(z => pointInZone({x, y}, z));
+    selectZone(hit || null);
+  }
+});
+
+canvas.addEventListener('dblclick', e => {
+  if (tool === 'draw' && currentPoints.length >= 3) {
+    // Remove the last click that was double-counted
+    currentPoints.pop();
+    openZoneForm();
+  }
+});
+
+function canvasToDrawing(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale };
+}
+
+function pointInZone(pt, z) {
+  if (z.points.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = z.points.length - 1; i < z.points.length; j = i++) {
+    const xi = z.points[i].x, yi = z.points[i].y;
+    const xj = z.points[j].x, yj = z.points[j].y;
+    if ((yi > pt.y) !== (yj > pt.y) && pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi)
+      inside = !inside;
+  }
+  return inside;
+}
+
+// ── Zone form ────────────────────────────────────────────────────────────────
+function openZoneForm() {
+  const lvl  = document.getElementById('zone-level').value;
+  const area = document.getElementById('zone-area').value;
+  const type = document.getElementById('zone-type').value;
+  const id   = `${lvl}-${area}-${type.replace(/\s+/g,'-')}`;
+  document.getElementById('form-zone-id').value = id;
+  document.getElementById('form-zone-label').value = '';
+  document.getElementById('form-zone-notes').value = '';
+  document.getElementById('zone-form-overlay').style.display = 'flex';
+}
+
+function cancelZoneForm() {
+  document.getElementById('zone-form-overlay').style.display = 'none';
+}
+
+function saveZone() {
+  const lvl  = document.getElementById('zone-level').value;
+  const area = document.getElementById('zone-area').value;
+  const type = document.getElementById('zone-type').value;
+  const id   = document.getElementById('form-zone-id').value;
+  const label = document.getElementById('form-zone-label').value || id;
+  const notes = document.getElementById('form-zone-notes').value;
+  const zone = { id, label, notes, level: lvl, area, type, points: [...currentPoints] };
+  zones.push(zone);
+  currentPoints = [];
+  document.getElementById('zone-form-overlay').style.display = 'none';
+  saveZones();
+  selectZone(zone);
+  render();
+  setStatus(`Zone "${label}" saved`);
+}
+
+function deleteSelectedZone() {
+  if (!selectedZone) return;
+  if (!confirm(`Delete zone "${selectedZone.label}"?`)) return;
+  zones = zones.filter(z => z !== selectedZone);
+  selectedZone = null;
+  saveZones();
+  render();
+  showPanelEmpty();
+}
+
+// ── Zone selection & panel ────────────────────────────────────────────────────
+function selectZone(z) {
+  selectedZone = z;
+  document.getElementById('delete-btn').style.display = z ? '' : 'none';
+  if (!z) { showPanelEmpty(); render(); return; }
+  document.getElementById('panel-title').textContent = z.label || z.id;
+  showZonePanel(z);
+  render();
+}
+
+function showPanelEmpty() {
+  document.getElementById('panel-title').textContent = 'Zone details';
+  document.getElementById('panel-body').innerHTML = '<p class="panel-empty">Select a zone on the drawing to see pour details, or use "Draw zone" to add a new zone.</p>';
+}
+
+function showZonePanel(z) {
+  const status = getZoneStatus(z);
+  const pours  = getZonePours(z);
+  const row    = smartsheetData && smartsheetData.rows
+    ? smartsheetData.rows.find(r => r.level === z.level && r.category === z.type)
+    : null;
+
+  let html = `
+    <div class="zone-info-label">Zone ID</div>
+    <div class="zone-info-value">${z.id}</div>
+    <div class="zone-info-label">Level / Area / Type</div>
+    <div class="zone-info-value">${z.level} &middot; ${z.area} &middot; ${z.type}</div>`;
+
+  if (z.notes) html += `<div class="zone-info-label">Notes</div><div class="zone-info-value">${z.notes}</div>`;
+
+  if (row) {
+    const pct = row.pctUsed;
+    const badgeClass = pct === null ? 'badge-grey' : (pct > 100 ? 'badge-red' : (pct >= 85 ? 'badge-amber' : 'badge-green'));
+    const badgeLabel = pct === null ? 'no estimate' : (pct > 100 ? `${pct.toFixed(1)}% — over` : (pct >= 85 ? `${pct.toFixed(1)}% — near` : `${pct.toFixed(1)}% on track`));
+    html += `
+      <div class="zone-info-label">Volume vs estimate</div>
+      <div class="zone-info-value">${row.actualVolume} of ${row.estimateVolume} m³ &nbsp;<span class="badge ${badgeClass}">${badgeLabel}</span></div>
+      <div class="zone-info-label">Cost to date</div>
+      <div class="zone-info-value">$${row.actualCost.toLocaleString()}</div>`;
+  } else {
+    html += `<div class="zone-info-label" style="margin-top:10px;">Status</div>
+    <div class="zone-info-value"><span class="badge badge-grey">Not yet poured</span></div>`;
+  }
+
+  if (pours.length > 0) {
+    html += `<div class="zone-info-label" style="margin-top:14px;">Pours (${pours.length})</div>`;
+    pours.forEach(p => {
+      html += `
+        <div class="pour-card">
+          <div class="pour-card-title">${p.po || 'PO unknown'}</div>
+          <div class="pour-card-row"><span>Date</span><span>${p.date || '—'}</span></div>
+          <div class="pour-card-row"><span>Volume</span><span>${p.volume} m³</span></div>
+          <div class="pour-card-row"><span>Mix</span><span>${p.mix || '—'}</span></div>
+          <div class="pour-card-row"><span>Location</span><span>${p.location || '—'}</span></div>
+          <div class="pour-card-row"><span>Cost</span><span>$${(p.cost||0).toLocaleString()}</span></div>
+        </div>`;
+    });
+  } else {
+    html += `<p class="sync-note">Sync with Smartsheet to load individual pour records.</p>`;
+  }
+
+  document.getElementById('panel-body').innerHTML = html;
+}
+
+function getZonePours(z) {
+  if (!smartsheetData || !smartsheetData.pours) return [];
+  return smartsheetData.pours.filter(p =>
+    p.level === z.level && p.category === z.type
+  );
+}
+
+// ── Tools ────────────────────────────────────────────────────────────────────
+function setTool(t) {
+  tool = t;
+  document.getElementById('tool-select').classList.toggle('active', t === 'select');
+  document.getElementById('tool-draw').classList.toggle('active', t === 'draw');
+  wrap.className = 'canvas-wrap mode-' + t;
+  if (t !== 'draw') { currentPoints = []; render(); }
+  setStatus(t === 'draw' ? 'Click to place zone points — double-click to close' : 'Click a zone to select it');
+}
+
+function clearLastPoint() {
+  if (currentPoints.length > 0) { currentPoints.pop(); render(); }
+}
+
+function cancelDraw() { currentPoints = []; render(); setStatus('Draw cancelled'); }
+function setStatus(msg) { document.getElementById('status-bar').textContent = msg; }
+
+// ── Persistence ───────────────────────────────────────────────────────────────
+function saveZones() {
+  try { localStorage.setItem('pourmap-zones-P2', JSON.stringify(zones)); } catch(e) {}
+}
+
+function loadZones() {
+  try {
+    const saved = localStorage.getItem('pourmap-zones-P2');
+    if (saved) zones = JSON.parse(saved);
+  } catch(e) {}
+}
+
+// ── Smartsheet sync ───────────────────────────────────────────────────────────
+async function syncSmartsheet() {
+  const btn = document.querySelector('button[onclick="syncSmartsheet()"]');
+  const statusEl = document.getElementById('sync-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Syncing...';
+  try {
+    const res = await fetch(SMARTSHEET_ENDPOINT);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Sync failed');
+    smartsheetData = data;
+    statusEl.textContent = 'Synced ' + new Date(data.updatedAt).toLocaleTimeString();
+    if (selectedZone) showZonePanel(selectedZone);
+    render();
+  } catch(e) {
+    statusEl.textContent = 'Sync failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Auto-sync on load
+window.addEventListener('load', () => setTimeout(syncSmartsheet, 500));
+</script>
+</body>
+</html>
