@@ -158,6 +158,14 @@ exports.handler = async function (event) {
       updatedAt: new Date().toISOString(),
       rows,
       mixComparison,
+      pours: pours.map(p => ({
+        level: p.level,
+        location: p.location,
+        category: LOCATION_MAP[p.location] || "Unmapped - review",
+        volume: round(p.volume),
+        cost: round((p.price || p.volume * p.rate) + p.additives),
+        mix: p.mixCode,
+      })),
       totals: {
         activeEstimate: round(rows.reduce((s, r) => s + r.estimateVolume, 0)),
         activeActual: round(activeRows.reduce((s, r) => s + r.actualVolume, 0)),
