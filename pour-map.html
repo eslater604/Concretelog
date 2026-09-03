@@ -368,7 +368,10 @@ async function uploadDrawing() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ level, dataUrl })
     });
-    if (!res.ok) throw new Error('Save failed');
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({error:'Unknown error'}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
     drawingCache[level] = dataUrl;
     status.textContent = `✓ Drawing for Level ${level} saved successfully.`;
     if (level === currentLevel) { setBg(dataUrl); updateDrawingBadge(level, new Date().toISOString()); }
@@ -389,7 +392,6 @@ function fileToDataUrl(file) {
 }
 
 async function pdfToDataUrl(file) {
-  // Load PDF.js from CDN
   if (!window.pdfjsLib) {
     await new Promise((resolve, reject) => {
       const s = document.createElement('script');
@@ -403,13 +405,22 @@ async function pdfToDataUrl(file) {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const page = await pdf.getPage(1);
-  // Render at 1.5x scale for quality
-  const viewport = page.getViewport({ scale: 1.5 });
+  // Render at 1.0x — keeps file size under Netlify Blob 5MB limit
+  // The drawing will still be crisp enough for markup purposes
+  const viewport = page.getViewport({ scale: 1.0 });
   const canvas = document.createElement('canvas');
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-  return canvas.toDataURL('image/jpeg', 0.88);
+  // Use JPEG at 0.75 quality — dramatically smaller than PNG, fine for line drawings
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+  const kb = Math.round(dataUrl.length * 0.75 / 1024);
+  document.getElementById('upload-status').textContent = `Rendered: ${viewport.width}x${viewport.height}px, ~${kb}KB — uploading...`;
+  if (dataUrl.length > 4 * 1024 * 1024) {
+    // Still too large — try lower quality
+    return canvas.toDataURL('image/jpeg', 0.55);
+  }
+  return dataUrl;
 }
 const TYPE_COLORS = {
   'Footings':'#d4725a','Walls':'#d4a85a','Columns':'#5a9ed4',
