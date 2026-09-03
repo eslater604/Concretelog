@@ -510,15 +510,16 @@ function closePourForm(){
 function populatePODropdown(){
   const sel=document.getElementById('f-po');
   sel.innerHTML='<option value="">— Select a PO —</option>';
-  if(!smData||!smData.pos){
+  if(!smData){
     const o=document.createElement('option');o.disabled=true;o.textContent='Sync with Smartsheet first to load POs';sel.appendChild(o);return;
   }
+  if(!smData.pos||smData.pos.length===0){
+    const o=document.createElement('option');o.disabled=true;o.textContent='No POs found — try re-syncing';sel.appendChild(o);return;
+  }
   smData.pos.forEach(po=>{
-    const o=document.createElement('option');o.value=po.po;
-    const parts=[];
-    if(po.date)parts.push(po.date);
-    if(po.mixes&&po.mixes[0]){const m=po.mixes[0];if(m.location)parts.push(m.location);if(m.volume)parts.push(m.volume+'m³');}
-    o.textContent=`${po.po} — ${parts.join(' · ')}`;
+    const o=document.createElement('option');
+    o.value=po.po;
+    o.textContent=po.po;
     sel.appendChild(o);
   });
 }
