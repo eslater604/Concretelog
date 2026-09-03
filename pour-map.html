@@ -400,7 +400,7 @@ function resetZoom(){fitToWindow();}
 function render(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if(bg.complete)ctx.drawImage(bg,0,0,canvas.width,canvas.height);
-  const levelPours=pours.filter(p=>p.level===currentLevel||p.mixes&&p.mixes.some(m=>m.level===currentLevel));
+  const levelPours=pours.filter(p=>p.level===currentLevel||!p.level||(p.mixes&&p.mixes.some(m=>m.level===currentLevel)));
   const hasFocus=!!selected;
   levelPours.forEach(p=>drawPour(p,p===selected,hasFocus&&p!==selected));
   if(currentPts.length>0){
@@ -611,8 +611,13 @@ function selectPour(p) {
 }
 
 function buildPourList() {
-  const levelPours = pours.filter(p => p.level === currentLevel ||
-    (p.mixes && p.mixes.some(m => m.level === currentLevel)));
+  const levelPours = pours.filter(p => {
+    if(p.level===currentLevel) return true;
+    if(p.mixes&&p.mixes.some(m=>m.level===currentLevel)) return true;
+    // Also show if level is unset (older saved pours may not have it)
+    if(!p.level&&!p.mixes) return true;
+    return false;
+  });
   document.getElementById('panel-title').textContent =
     'Logged pours -- Level ' + currentLevel + ' (' + levelPours.length + ')';
   document.getElementById('del-btn').style.display = 'none';
@@ -706,6 +711,7 @@ async function loadPours(){
   pours=[];
   for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('pour-'))try{pours.push(JSON.parse(localStorage.getItem(k)));}catch(e){}}
   render();
+  buildPourList();
 }
 async function deletePour(id){
   try{await fetch('/.netlify/functions/delete-pour',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});}catch(e){}
@@ -723,6 +729,7 @@ async function syncData(){
     smData=data;
     el.textContent='Synced '+new Date(data.updatedAt).toLocaleTimeString();
     if(selected)selectPour(selected);
+    buildPourList();
     render();
   }catch(e){el.textContent='Sync failed: '+e.message;}
 }
