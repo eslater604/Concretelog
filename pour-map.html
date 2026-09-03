@@ -384,7 +384,7 @@ const ctx=canvas.getContext('2d');
 const wrap=document.getElementById('canvas-wrap');
 let bg=new Image(), scale=1;
 let currentPts=[], pours=[], selected=null, tool='draw', smData=null;
-let currentLevel='P2', pendingPts=null;
+let currentLevel='P2', pendingPts=null, redrawingId=null;
 
 bg = new Image();
 bg.onload = () => { fitToWindow(); loadPours(); loadDrawingForLevel('P2'); };
@@ -481,7 +481,28 @@ canvas.addEventListener('click',e=>{
     render();
   }
 });
-canvas.addEventListener('dblclick',e=>{if(tool==='draw'&&currentPts.length>=3){currentPts.pop();openForm();}});
+canvas.addEventListener('dblclick',e=>{
+  if(tool==='draw'&&currentPts.length>=3){
+    currentPts.pop();
+    if(redrawingId){
+      // Save new polygon to existing pour
+      const p=pours.find(x=>x.id===redrawingId);
+      if(p){
+        p.points=[...currentPts];
+        persistPour(p);
+      }
+      redrawingId=null;
+      currentPts=[];
+      setTool('select');
+      ['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');
+      setStatus('Polygon updated');
+      buildPourList();
+      render();
+    } else {
+      openForm();
+    }
+  }
+});
 function evtPt(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)/scale,y:(e.clientY-r.top)/scale};}
 function ptIn(pt,pts){
   let inside=false;
@@ -502,7 +523,7 @@ function setTool(t){
   setStatus(t==='draw'?'Click to place points -- double-click to close and link a PO':'Click a pour to see details');
 }
 function clearLastPoint(){if(currentPts.length>0){currentPts.pop();render();}}
-function cancelDraw(){currentPts=[];render();['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');setStatus('Cancelled');}
+function cancelDraw(){currentPts=[];redrawingId=null;render();['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');setStatus('Cancelled');}
 function setStatus(m){document.getElementById('status-bar').textContent=m;}
 function switchLevel(){
   currentLevel=document.getElementById('level-sel').value;
@@ -656,9 +677,10 @@ function buildPourList() {
           '<div class="prow"><span>Volume</span><span>'+m.volume+'m³</span></div>' +
           '<div class="prow"><span>Cost</span><span>$'+(m.concreteCost||0).toLocaleString()+'</span></div>' +
           '</div>').join('') +
-        '<div style="margin-top:8px;display:flex;gap:6px;">' +
-          '<button class="tbtn" style="font-size:11px;padding:3px 10px;" onclick="focusPour('+p.id+')">Focus</button>' +
-          '<button class="tbtn" style="font-size:11px;padding:3px 10px;background:var(--red-bg);color:var(--red);border-color:#fcc;" onclick="deletePourById('+p.id+')">Delete</button>' +
+        '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">' +
+          '<button class="tbtn" style="font-size:11px;padding:3px 10px;" onclick="focusPour(\''+p.id+'\')">Focus</button>' +
+          '<button class="tbtn" style="font-size:11px;padding:3px 10px;background:#e6f1fb;color:#185fa5;border-color:#b3d4f5;" onclick="startRedraw(\''+p.id+'\')">Redraw</button>' +
+          '<button class="tbtn" style="font-size:11px;padding:3px 10px;background:var(--red-bg);color:var(--red);border-color:#fcc;" onclick="deletePourById(\''+p.id+'\')">Delete</button>' +
         '</div>' +
         '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">'+(p.createdAt?new Date(p.createdAt).toLocaleString():'')+'</div>' +
       '</div></div>';
@@ -682,6 +704,22 @@ function focusPour(id) {
   render();
 }
 
+
+let redrawingId = null;
+
+function startRedraw(id) {
+  const p = pours.find(x=>x.id===id);
+  if (!p) return;
+  redrawingId = id;
+  selected = p;
+  currentPts = [];
+  setTool('draw');
+  setStatus('Redrawing ' + (p.po||'pour') + ' -- click new points, double-click to finish');
+  document.getElementById('cancel-btn').style.display='';
+  document.getElementById('undo-btn').style.display='';
+  buildPourList();
+  render();
+}
 async function deletePourById(id) {
   const p = pours.find(x=>x.id===id);
   if (!p||!confirm('Delete pour '+(p.po||'')+'?')) return;
