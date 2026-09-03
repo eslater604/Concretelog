@@ -275,20 +275,21 @@ const drawingCache = {}; // level -> dataUrl
 
 async function loadDrawingForLevel(level) {
   if (drawingCache[level]) {
-    setBg(drawingCache[level]);
+    const cached = drawingCache[level];
+    await loadDrawingFromData(cached.dataUrl || cached, cached.fileType);
     return;
   }
   try {
     const res = await fetch(`/.netlify/functions/load-drawing?level=${encodeURIComponent(level)}`);
     if (res.ok) {
       const data = await res.json();
-      drawingCache[level] = data.dataUrl;
-      setBg(data.dataUrl);
+      drawingCache[level] = { dataUrl: data.dataUrl, fileType: data.fileType };
+      await loadDrawingFromData(data.dataUrl, data.fileType);
       updateDrawingBadge(level, data.uploadedAt);
       return;
     }
   } catch(e) {}
-  // No uploaded drawing -- use fallback for P2, blank canvas for others
+  // No uploaded drawing -- use fallback for P2, blank for others
   if (level === 'P2') {
     setBg(FALLBACK_DRAWING);
     updateDrawingBadge(level, null);
@@ -297,6 +298,7 @@ async function loadDrawingForLevel(level) {
     updateDrawingBadge(level, null);
   }
 }
+
 
 function setBg(src) {
   bg = new Image();
@@ -351,35 +353,81 @@ async function uploadDrawing() {
   const btn = document.getElementById('upload-save-btn');
   if (!file) { status.textContent = 'Please select a file first.'; return; }
   btn.disabled = true;
-  status.textContent = 'Converting and uploading...';
+  status.textContent = `Reading file (${(file.size/1024).toFixed(0)}KB)...`;
   try {
-    let dataUrl;
-    if (file.type.startsWith('image/')) {
-      dataUrl = await fileToDataUrl(file);
-    } else if (file.type === 'application/pdf') {
-      // Convert PDF via canvas using PDF.js
-      dataUrl = await pdfToDataUrl(file);
-    } else {
-      status.textContent = 'Unsupported file type.'; btn.disabled = false; return;
-    }
-    // Send to cloud
+    // Send raw file as base64 — no pre-rendering, render happens client-side on load
+    const base64 = await fileToBase64(file);
+    const dataUrl = `data:${file.type};base64,${base64}`;
+    const sizeKB = Math.round(base64.length * 0.75 / 1024);
+    status.textContent = `Uploading ${sizeKB}KB...`;
+
     const res = await fetch('/.netlify/functions/save-drawing', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ level, dataUrl })
+      body: JSON.stringify({ level, dataUrl, fileType: file.type })
     });
     if (!res.ok) {
-      const err = await res.json().catch(()=>({error:'Unknown error'}));
+      const err = await res.json().catch(()=>({error:`HTTP ${res.status}`}));
       throw new Error(err.error || `HTTP ${res.status}`);
     }
-    drawingCache[level] = dataUrl;
-    status.textContent = `✓ Drawing for Level ${level} saved successfully.`;
-    if (level === currentLevel) { setBg(dataUrl); updateDrawingBadge(level, new Date().toISOString()); }
+    drawingCache[level] = { dataUrl, fileType: file.type };
+    status.textContent = `✓ Drawing for Level ${level} saved (${sizeKB}KB).`;
+    if (level === currentLevel) { await loadDrawingFromData(dataUrl, file.type); updateDrawingBadge(level, new Date().toISOString()); }
     setTimeout(() => { document.getElementById('upload-overlay').style.display = 'none'; }, 1200);
   } catch(e) {
     status.textContent = 'Upload failed: ' + e.message;
   }
   btn.disabled = false;
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function loadDrawingFromData(dataUrl, fileType) {
+  if (!fileType) fileType = dataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
+  if (fileType === 'application/pdf') {
+    await renderPdfToCanvas(dataUrl);
+  } else {
+    setBg(dataUrl);
+  }
+}
+
+async function renderPdfToCanvas(dataUrl) {
+  if (!window.pdfjsLib) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  // Convert dataUrl back to ArrayBuffer for PDF.js
+  const base64 = dataUrl.split(',')[1];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+  const pdf = await window.pdfjsLib.getDocument({ data: bytes }).promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 1.0 });
+
+  // Render PDF into an offscreen canvas, then use it as the background image
+  const offscreen = document.createElement('canvas');
+  offscreen.width = viewport.width;
+  offscreen.height = viewport.height;
+  await page.render({ canvasContext: offscreen.getContext('2d'), viewport }).promise;
+
+  // Convert to image URL and set as background
+  const imgUrl = offscreen.toDataURL('image/jpeg', 0.82);
+  setBg(imgUrl);
 }
 
 function fileToDataUrl(file) {
