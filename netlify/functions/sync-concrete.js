@@ -159,50 +159,62 @@ exports.handler = async function (event) {
       return (b.pctUsed ?? -1) - (a.pctUsed ?? -1);
     });
 
-    // Build full PO list for the pour map (all rows, not just completed)
-    const allRows = sheet.rows;
-    const pos = allRows.map(row => {
-      const cells = cellByColId(row);
-      const g = k => cells[colIdByTitle[k]];
-      const mixes = [];
-      [
-        ["Mix #1 Ordered","Unit Price ($/m3)","Volume (m3)","Level","Location Used","Mix #1 Concrete Price",
-         [["M#1-Add #1","M#1-Add #1 Unit Price"],["M#1-Add #2","M#1-Add #2 Unit Price"],["M#1-Add #3","M#1-Add #3 Unit Price"],["M#1-Add #4","M#1-Add #4 Unit Price"]]],
-        ["(Mix #2) Ordered","(Mix #2) Unit Price ($/m3)","(Mix #2) Volume (m3)","(Mix #2) Level","(Mix #2) Location Used","Mix #2 Concrete Price",
-         [["M#2-Add #1","M#2-Add #1 Unit Price"],["M#2-Add #2","M#2-Add #2 Unit Price"]]],
-        ["(Mix #3) Ordered","(Mix #3) Unit Price ($/m3)","(Mix #3) Volume (m3)","(Mix #3) Level","(Mix #3) Location Used","Mix #3 Concrete Price",
-         [["M#3-Add #1","M#3-Add #1 Unit Price"]]],
-      ].forEach(([ordKey,rateKey,volKey,lvlKey,locKey,priceKey,addPairs]) => {
-        const ordered = g(ordKey); const vol = num(g(volKey)); const level = g(lvlKey); const location = g(locKey);
-        if (!ordered && !vol) return;
-        const mixCode = ordered ? String(ordered).trim().split(/[\s-]/)[0] : null;
-        const admixtures = addPairs.map(([nameKey,priceKey2]) => {
-          const name = g(nameKey); const cost = num(g(priceKey2));
-          return name ? {name: String(name), cost} : null;
-        }).filter(Boolean);
-        mixes.push({
-          mixCode, mixOrdered: ordered ? String(ordered) : null,
-          rate: num(g(rateKey)), volume: vol,
-          level: level ? String(level) : null,
-          location: location ? String(location) : null,
-          concreteCost: num(g(priceKey)),
-          admixtures
-        });
-      });
-      const completed = g("Completed by Site Team") === true;
-      // PO# is a formula column - try it first, fall back to PO (SYS_UNIQUEID col)
-      const po = g("PO#") || g("PO") || null;
+    // Build full PO list for the pour map using column index (sparse rows
+    // only return cells that have values; index is more reliable than title lookup)
+    const poColIdx    = 2;  // "PO" (SYS_UNIQUEID)
+    const poNumColIdx = 3;  // "PO#" (formula)
+    const dateColIdx  = 5;  // "Delivery Date"
+    const completedIdx= 1;  // "Completed by Site Team"
+    const notesColIdx = 41; // "Notes"
+    const totalColIdx = 40; // "Total Price"
+    const admixColIdx = 39; // "Admixtures Price"
+
+    // Build a columnId -> columnIndex map for index-based lookup
+    const colIndexById = {};
+    for (const col of sheet.columns) colIndexById[col.id] = col.index;
+
+    const pos = sheet.rows.map(row => {
+      // Build index-keyed cell map
+      const byIdx = {};
+      for (const cell of row.cells) {
+        const idx = colIndexById[cell.columnId];
+        if (idx !== undefined) byIdx[idx] = cell.value;
+      }
+      const po = byIdx[poColIdx] || byIdx[poNumColIdx] || null;
       if (!po) return null;
       return {
         po: String(po),
-        date: g("Delivery Date") ? String(g("Delivery Date")) : null,
-        notes: g("Notes") ? String(g("Notes")) : null,
-        completed,
-        totalCost: num(g("Total Price")),
-        admixtureCost: num(g("Admixtures Price")),
-        mixes
+        date: byIdx[dateColIdx] ? String(byIdx[dateColIdx]) : null,
+        completed: byIdx[completedIdx] === true,
+        totalCost: num(byIdx[totalColIdx]),
+        admixtureCost: num(byIdx[admixColIdx]),
+        notes: byIdx[notesColIdx] ? String(byIdx[notesColIdx]) : null,
+        mixes: [] // populated below with full data already in pours array
       };
     }).filter(Boolean);
+
+    // Attach full mix data to each PO from the already-processed pours array
+    pos.forEach(po => {
+      po.mixes = pours
+        .filter(p => {
+          const rowPo = sheet.rows.find(r => {
+            const byIdx = {};
+            for (const cell of r.cells) { const idx = colIndexById[cell.columnId]; if (idx !== undefined) byIdx[idx] = cell.value; }
+            return String(byIdx[poColIdx] || byIdx[poNumColIdx] || '') === po.po;
+          });
+          return !!rowPo;
+        })
+        .map(p => ({
+          mixCode: p.mixCode,
+          mixOrdered: null,
+          rate: p.rate,
+          volume: p.volume,
+          level: p.level,
+          location: p.location,
+          concreteCost: p.price || p.volume * p.rate,
+          admixtures: []
+        }));
+    });
 
     return respond(200, {
       updatedAt: new Date().toISOString(),
