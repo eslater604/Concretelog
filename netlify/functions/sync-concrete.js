@@ -17,9 +17,14 @@ const SHEET_ID = "1726632799719300"; // 665 - 701 Kingsway - Concrete Log
 // column order can shift if someone edits the sheet.
 const WANTED_COLUMNS = [
   "Completed by Site Team",
-  "Unit Price ($/m3)", "Volume (m3)", "Level", "Location Used", "Mix #1 Concrete Price",
-  "(Mix #2) Unit Price ($/m3)", "(Mix #2) Volume (m3)", "(Mix #2) Level", "(Mix #2) Location Used", "Mix #2 Concrete Price",
-  "(Mix #3) Unit Price ($/m3)", "(Mix #3) Volume (m3)", "(Mix #3) Level", "(Mix #3) Location Used", "Mix #3 Concrete Price"
+  "PO", "PO#", "Delivery Date", "Notes",
+  "Unit Price ($/m3)", "Volume (m3)", "Level", "Location Used", "Mix #1 Ordered", "Mix #1 Concrete Price",
+  "(Mix #2) Unit Price ($/m3)", "(Mix #2) Volume (m3)", "(Mix #2) Level", "(Mix #2) Location Used", "(Mix #2) Ordered", "Mix #2 Concrete Price",
+  "(Mix #3) Unit Price ($/m3)", "(Mix #3) Volume (m3)", "(Mix #3) Level", "(Mix #3) Location Used", "(Mix #3) Ordered", "Mix #3 Concrete Price",
+  "M#1-Add #1", "M#1-Add #1 Unit Price", "M#1-Add #2", "M#1-Add #2 Unit Price", "M#1-Add #3", "M#1-Add #3 Unit Price", "M#1-Add #4", "M#1-Add #4 Unit Price",
+  "M#2-Add #1", "M#2-Add #1 Unit Price", "M#2-Add #2", "M#2-Add #2 Unit Price",
+  "M#3-Add #1", "M#3-Add #1 Unit Price",
+  "Total Price", "Admixtures Price"
 ];
 
 exports.handler = async function (event) {
@@ -29,7 +34,7 @@ exports.handler = async function (event) {
   }
 
   try {
-    const sheetRes = await fetch(`https://api.smartsheet.com/2.0/sheets/${SHEET_ID}`, {
+    const sheetRes = await fetch(`https://api.smartsheet.com/2.0/sheets/${SHEET_ID}?include=rowPermalink&level=1`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (!sheetRes.ok) {
@@ -154,10 +159,56 @@ exports.handler = async function (event) {
       return (b.pctUsed ?? -1) - (a.pctUsed ?? -1);
     });
 
+    // Build full PO list for the pour map (all rows, not just completed)
+    const allRows = sheet.rows;
+    const pos = allRows.map(row => {
+      const cells = cellByColId(row);
+      const g = k => cells[colIdByTitle[k]];
+      const mixes = [];
+      [
+        ["Mix #1 Ordered","Unit Price ($/m3)","Volume (m3)","Level","Location Used","Mix #1 Concrete Price",
+         [["M#1-Add #1","M#1-Add #1 Unit Price"],["M#1-Add #2","M#1-Add #2 Unit Price"],["M#1-Add #3","M#1-Add #3 Unit Price"],["M#1-Add #4","M#1-Add #4 Unit Price"]]],
+        ["(Mix #2) Ordered","(Mix #2) Unit Price ($/m3)","(Mix #2) Volume (m3)","(Mix #2) Level","(Mix #2) Location Used","Mix #2 Concrete Price",
+         [["M#2-Add #1","M#2-Add #1 Unit Price"],["M#2-Add #2","M#2-Add #2 Unit Price"]]],
+        ["(Mix #3) Ordered","(Mix #3) Unit Price ($/m3)","(Mix #3) Volume (m3)","(Mix #3) Level","(Mix #3) Location Used","Mix #3 Concrete Price",
+         [["M#3-Add #1","M#3-Add #1 Unit Price"]]],
+      ].forEach(([ordKey,rateKey,volKey,lvlKey,locKey,priceKey,addPairs]) => {
+        const ordered = g(ordKey); const vol = num(g(volKey)); const level = g(lvlKey); const location = g(locKey);
+        if (!ordered && !vol) return;
+        const mixCode = ordered ? String(ordered).trim().split(/[\s-]/)[0] : null;
+        const admixtures = addPairs.map(([nameKey,priceKey2]) => {
+          const name = g(nameKey); const cost = num(g(priceKey2));
+          return name ? {name: String(name), cost} : null;
+        }).filter(Boolean);
+        mixes.push({
+          mixCode, mixOrdered: ordered ? String(ordered) : null,
+          rate: num(g(rateKey)), volume: vol,
+          level: level ? String(level) : null,
+          location: location ? String(location) : null,
+          concreteCost: num(g(priceKey)),
+          admixtures
+        });
+      });
+      const completed = g("Completed by Site Team") === true;
+      // PO# is a formula column - try it first, fall back to PO (SYS_UNIQUEID col)
+      const po = g("PO#") || g("PO") || null;
+      if (!po) return null;
+      return {
+        po: String(po),
+        date: g("Delivery Date") ? String(g("Delivery Date")) : null,
+        notes: g("Notes") ? String(g("Notes")) : null,
+        completed,
+        totalCost: num(g("Total Price")),
+        admixtureCost: num(g("Admixtures Price")),
+        mixes
+      };
+    }).filter(Boolean);
+
     return respond(200, {
       updatedAt: new Date().toISOString(),
       rows,
       mixComparison,
+      pos,
       pours: pours.map(p => ({
         level: p.level,
         location: p.location,
