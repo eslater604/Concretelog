@@ -372,7 +372,7 @@ const LOCATION_TO_TYPE = {
   'Concrete Topping (Interior)':'Slabs on grade','Concrete Topping (Exterior - non structural)':'Slabs on grade',
 };
 
-const DW=1536, DH=1382;
+const DW=2048, DH=1728;
 const canvas=document.getElementById('c');
 const ctx=canvas.getContext('2d');
 const wrap=document.getElementById('canvas-wrap');
@@ -384,7 +384,7 @@ bg = new Image();
 bg.onload = () => { fitToWindow(); loadPours(); loadDrawingForLevel('P2'); };
 bg.src = FALLBACK_DRAWING;
 
-function fitToWindow(){scale=Math.min(wrap.clientWidth/DW,wrap.clientHeight/DH);resize();}
+function fitToWindow(){scale=Math.min(wrap.clientWidth/DW,wrap.clientHeight/DH);if(scale*DW<wrap.clientWidth)scale=wrap.clientWidth/DW;resize();}
 function resize(){canvas.width=Math.round(DW*scale);canvas.height=Math.round(DH*scale);render();}
 function zoomIn(){scale=Math.min(scale*1.25,4);resize();}
 function zoomOut(){scale=Math.max(scale*0.8,0.2);resize();}
