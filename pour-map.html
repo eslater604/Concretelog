@@ -119,10 +119,34 @@ canvas{display:block;}
   </div>
   <div class="tsep"></div>
   <select class="tsel" id="level-sel" onchange="switchLevel()">
-    <option value="P2">Level P2</option>
-    <option value="P1">Level P1</option>
-    <option value="P1a">Level P1a</option>
-    <option value="1">Level 1</option>
+        <option value="P2">P2</option>
+        <option value="P1">P1</option>
+        <option value="P1a">P1a</option>
+        <option value="1">Level 1</option>
+        <option value="2">Level 2</option>
+        <option value="3">Level 3</option>
+        <option value="4">Level 4</option>
+        <option value="5">Level 5</option>
+        <option value="6">Level 6</option>
+        <option value="7">Level 7</option>
+        <option value="8">Level 8</option>
+        <option value="9">Level 9</option>
+        <option value="10">Level 10</option>
+        <option value="11">Level 11</option>
+        <option value="12">Level 12</option>
+        <option value="13">Level 13</option>
+        <option value="14">Level 14</option>
+        <option value="15">Level 15</option>
+        <option value="16">Level 16</option>
+        <option value="17">Level 17</option>
+        <option value="18">Level 18</option>
+        <option value="19">Level 19</option>
+        <option value="20">Level 20</option>
+        <option value="21">Level 21</option>
+        <option value="22">Level 22</option>
+        <option value="23">Level 23</option>
+        <option value="24">Level 24</option>
+        <option value="25">Level 25</option>
   </select>
   <div class="tsep"></div>
   <button class="tbtn" onclick="clearLastPoint()" id="undo-btn" style="display:none;">&#8592; Undo point</button>
@@ -178,9 +202,31 @@ canvas{display:block;}
         <option value="P2">P2</option>
         <option value="P1">P1</option>
         <option value="P1a">P1a</option>
-        <option value="1">Level 1</option>
-        <option value="2">Level 2</option>
-        <option value="3">Level 3</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10</option>
+        <option value="11">11</option>
+        <option value="12">12</option>
+        <option value="13">13</option>
+        <option value="14">14</option>
+        <option value="15">15</option>
+        <option value="16">16</option>
+        <option value="17">17</option>
+        <option value="18">18</option>
+        <option value="19">19</option>
+        <option value="20">20</option>
+        <option value="21">21</option>
+        <option value="22">22</option>
+        <option value="23">23</option>
+        <option value="24">24</option>
+        <option value="25">25</option>
       </select>
     </div>
     <div class="fg">
@@ -413,7 +459,41 @@ function render(){
   }
 }
 
-function drawPour(p,sel,dimmed){
+// Total plan areas extracted from P2 drawing (image analysis, 3/32"=1' scale)
+// These are the 100% denominators for each pour type's donut chart.
+// Units: m² of plan area visible on the Level P2 structural drawing.
+const DRAWING_TOTAL_AREAS = {
+  'P2': {
+    'Footings':       105,   // 16 footing pads/strips
+    'Walls':           52,   // perimeter + core walls
+    'Columns':        3.8,   // 16 column elements
+    'Slabs on grade': 612,   // parkade SOG area
+    'Suspended slab': 612,   // same open area (placeholder until P1 drawing loaded)
+    'Blinding':       105,   // same footprint as footings
+  }
+};
+
+// Get total plan area for a given level + type (px² on canvas, scaled to m²)
+function getTotalPlanArea(level, type) {
+  const byLevel = DRAWING_TOTAL_AREAS[level];
+  return byLevel ? (byLevel[type] || 100) : 100;
+}
+
+// Polygon area in m² using shoelace (points are in drawing coords, px at scale=1)
+function polyAreaM2(pts) {
+  if (!pts || pts.length < 3) return 0;
+  let a = 0;
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  // pts are in drawing-space pixels (at scale=1), convert to m²
+  // 1 drawing px = 45.7mm = 0.0457m  ->  1 px² = 0.002089 m²
+  return Math.abs(a) / 2 * 0.002089;
+}
+
+function drawPour(p, sel, dimmed) {
   if(!p.points||p.points.length<3)return;
   const type=p.type||guessType(p);
   const base=TYPE_COLORS[type]||'#d4725a';
@@ -427,23 +507,62 @@ function drawPour(p,sel,dimmed){
   ctx.fillStyle=`rgba(${r},${g},${b},${fillAlpha})`;ctx.fill();
   ctx.strokeStyle=dimmed?`rgba(${r},${g},${b},${strokeAlpha})`:sel?'#1a6bff':base;
   ctx.lineWidth=sel?3:2;ctx.stroke();
-  if(dimmed)return; // don't draw label on dimmed pours
-  // Number label
-  const levelPours=pours.filter(x=>x.level===currentLevel||(x.mixes&&x.mixes.some(m=>m.level===currentLevel)));
+  if(dimmed)return;
+
+  const levelPours=pours.filter(x=>x.level===currentLevel||!x.level||(x.mixes&&x.mixes.some(m=>m.level===currentLevel)));
   const num=levelPours.indexOf(p)+1;
   const cx=p.points.reduce((s,pt)=>s+pt.x,0)/p.points.length;
   const cy=p.points.reduce((s,pt)=>s+pt.y,0)/p.points.length;
   const fs=Math.max(9,Math.round(11*scale));
-  // Number badge
-  ctx.beginPath();ctx.arc(cx*scale,cy*scale-fs*0.8,fs*0.9,0,Math.PI*2);
+  const badgeR = fs * 1.1; // radius of the badge circle
+  const donutR = badgeR + Math.max(3, fs * 0.55); // outer radius of donut ring
+  const bx = cx*scale, by = (cy*scale) - fs*0.6;
+
+  // -- % complete: sum of ALL drawn polygons of this type / total plan area from drawing --
+  const totalPlanM2 = getTotalPlanArea(currentLevel, type);
+  let drawnM2 = 0;
+  levelPours.forEach(lp => {
+    if ((lp.type||guessType(lp)) === type && lp.points && lp.points.length >= 3) {
+      drawnM2 += polyAreaM2(lp.points);
+    }
+  });
+  const pct = Math.min(drawnM2 / totalPlanM2, 1);
+
+  // -- Draw donut ring (track + filled arc) --
+  const startAngle = -Math.PI / 2; // start at top
+  // Track (light)
+  ctx.beginPath();
+  ctx.arc(bx, by, donutR, 0, Math.PI*2);
+  ctx.strokeStyle = `rgba(${r},${g},${b},0.2)`;
+  ctx.lineWidth = Math.max(2, fs*0.45);
+  ctx.stroke();
+  // Filled arc
+  if (pct > 0) {
+    ctx.beginPath();
+    ctx.arc(bx, by, donutR, startAngle, startAngle + pct * Math.PI * 2);
+    ctx.strokeStyle = sel ? '#1a6bff' : base;
+    ctx.lineWidth = Math.max(2, fs*0.45);
+    ctx.stroke();
+  }
+
+  // -- Badge circle --
+  ctx.beginPath();ctx.arc(bx, by, badgeR, 0, Math.PI*2);
   ctx.fillStyle=sel?'#1a6bff':base;ctx.fill();
   ctx.font=`bold ${fs}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.fillStyle='#fff';
-  ctx.fillText(num>0?num:'?',cx*scale,cy*scale-fs*0.8);
-  // PO label below
+  ctx.fillText(num>0?num:'?', bx, by);
+
+  // -- % label just below the donut --
+  const pctLabel = Math.round(pct*100)+'%';
+  ctx.font=`bold ${Math.max(7,Math.round(fs*0.8))}px sans-serif`;
+  ctx.fillStyle='rgba(0,0,0,0.75)';
+  ctx.fillText(pctLabel, bx, by + donutR + Math.max(5, fs*0.6));
+
+  // -- PO label below % --
   if(p.po){
-    ctx.font=`bold ${fs-1}px sans-serif`;ctx.fillStyle='rgba(0,0,0,0.8)';
-    ctx.fillText(p.po,cx*scale,cy*scale+fs*0.4);
+    ctx.font=`${Math.max(7,fs-2)}px sans-serif`;
+    ctx.fillStyle='rgba(0,0,0,0.7)';
+    ctx.fillText(p.po, bx, by + donutR + Math.max(5, fs*0.6) + Math.max(8, fs*0.9));
   }
 }
 
@@ -604,7 +723,9 @@ async function savePour(){
   // Use delivery date from Smartsheet, fall back to today
   const date=po&&po.date?po.date:new Date().toISOString().split('T')[0];
   const type=po&&po.mixes&&po.mixes[0]?LOCATION_TO_TYPE[po.mixes[0].location||'']||'Footings':'Footings';
-  const level=po&&po.mixes&&po.mixes[0]?po.mixes[0].level||currentLevel:currentLevel;
+  // Level is always the level currently being viewed — most reliable signal
+  // (Smartsheet mix levels can be different if a PO spans multiple levels)
+  const level=currentLevel;
 
   const testPo=document.getElementById('f-test-po').value.trim();
 
@@ -620,10 +741,10 @@ async function savePour(){
   pours.push(pour);
   await persistPour(pour);
   closePourForm();
-  selectPour(pour);
+  selected=pour;
   buildPourList();
   render();
-  setStatus(`Pour logged: ${poNum} -- ${date}`);
+  setStatus('Saved: '+poNum+' ('+date+') -- '+type+' -- Level '+level);
 }
 
 // ---- Selection & panel ------------------------------------------------------------------------------------------------------------------
@@ -658,12 +779,21 @@ function buildPourList() {
     const typeColor = TYPE_COLORS[p.type||guessType(p)]||'#999';
     const mixSummary = (p.mixes||[]).filter(m=>m.volume).map(m=>(m.mixCode||'?')+' '+m.volume+'m³').join(', ');
     const isOpen = selected && selected.id === p.id;
+    // Area-based % vs drawing total plan area
+    const _type = p.type||guessType(p);
+    const _totalPlanM2 = getTotalPlanArea(currentLevel, _type);
+    let _drawnM2 = 0;
+    levelPours.forEach(lp => {
+      if ((lp.type||guessType(lp))===_type && lp.points && lp.points.length>=3) _drawnM2 += polyAreaM2(lp.points);
+    });
+    const _areaPct = Math.round(Math.min(_drawnM2/_totalPlanM2,1)*100);
+    const _areaLabel = p.points && p.points.length>=3 ? _areaPct+'% of '+_type.toLowerCase()+' marked up' : '';
     return '<div class="pour-list-item" id="pli-'+i+'">' +
       '<div class="pour-list-header" data-pid="'+p.id+'" onclick="togglePourItem('+i+',this.parentElement.dataset.pid)">' +
         '<div class="pour-list-num" style="background:'+typeColor+'">'+(i+1)+'</div>' +
         '<div style="flex:1;min-width:0;">' +
           '<div class="pour-list-title">'+(p.po||'PO unknown')+'</div>' +
-          '<div class="pour-list-sub">'+(p.date||'')+' '+(p.type?'&middot; '+p.type:'')+'</div>' +
+          '<div class="pour-list-sub">'+(p.date||'')+' '+(p.type?'&middot; '+p.type:'')+(_areaLabel?' &middot; <strong>'+_areaPct+'%</strong>':'')+'</div>' +
         '</div>' +
         (bl?'<span class="badge '+bc+'" style="font-size:10px;margin-right:4px;">'+bl+'</span>':'') +
         '<span class="pour-list-chevron'+(isOpen?' open':'')+'" id="chev-'+i+'">&#9654;</span>' +
