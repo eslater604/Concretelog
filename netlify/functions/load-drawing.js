@@ -9,7 +9,6 @@ exports.handler = async function(event) {
     const dataUrl = await store.get(`drawing-${level}`, { type: "text" });
     if (!dataUrl)
       return { statusCode: 404, body: JSON.stringify({ error: "No drawing uploaded for this level" }) };
-    // Get metadata if available
     const meta = await store.get(`drawing-meta-${level}`, { type: "json" }).catch(()=>null);
     return {
       statusCode: 200,
@@ -17,6 +16,7 @@ exports.handler = async function(event) {
       body: JSON.stringify({
         dataUrl,
         level,
+        fileType: meta ? meta.fileType : 'image/jpeg',
         uploadedAt: meta ? meta.uploadedAt : null,
         sizeKB: meta ? meta.sizeKB : null
       })
