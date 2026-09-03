@@ -57,7 +57,7 @@ canvas{display:block;}
 .pour-list-item{border-bottom:1px solid var(--border);overflow:hidden;}
 .pour-list-item:last-child{border-bottom:none;}
 .pour-list-header{display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;user-select:none;}
-.pour-list-num{width:24px;height:24px;border-radius:50%;background:var(--brand-red);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.pour-list-num{width:36px;height:36px;border-radius:50%;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;}
 .pour-list-title{flex:1;font-size:13px;font-weight:700;}
 .pour-list-sub{font-size:11px;color:var(--text-muted);}
 .pour-list-chevron{font-size:10px;color:var(--text-muted);transition:transform .2s;}
@@ -526,12 +526,12 @@ function render(){
 // Units: m² of plan area visible on the Level P2 structural drawing.
 const DRAWING_TOTAL_AREAS = {
   'P2': {
-    'Footings':       105,   // 16 footing pads/strips
-    'Walls':           52,   // perimeter + core walls
-    'Columns':        3.8,   // 16 column elements
-    'Slabs on grade': 612,   // parkade SOG area
-    'Suspended slab': 612,   // same open area (placeholder until P1 drawing loaded)
-    'Blinding':       105,   // same footprint as footings
+    'Footings':       350,   // pads + strip + core pad + shear wall footing
+    'Walls':           52,
+    'Columns':        3.8,
+    'Slabs on grade': 612,
+    'Suspended slab': 612,
+    'Blinding':       350,   // same footprint as footings
   }
 };
 
@@ -881,7 +881,25 @@ function buildPourList() {
     const _areaLabel = p.points && p.points.length>=3 ? _areaPct+'% of '+_type.toLowerCase()+' marked up' : '';
     return '<div class="pour-list-item" id="pli-'+i+'">' +
       '<div class="pour-list-header" data-pid="'+p.id+'" onclick="togglePourItem('+i+',this.parentElement.dataset.pid)">' +
-        '<div class="pour-list-num" style="background:'+typeColor+'">'+(i+1)+'</div>' +
+        (function(){
+          const _totalM2 = getTotalPlanArea(currentLevel, _type);
+          let _totalDrawn = 0;
+          levelPours.forEach(lp => { if((lp.type||guessType(lp))===_type && lp.points && lp.points.length>=3) _totalDrawn += polyAreaM2(lp.points); });
+          const _pct = Math.min(_totalDrawn / _totalM2, 1);
+          const _r = 15, _cx = 18, _cy = 18, _stroke = 4;
+          const _circ = 2 * Math.PI * _r;
+          const _dash = _pct * _circ;
+          return '<div class="pour-list-num" style="background:transparent;width:36px;height:36px;">'
+            + '<svg width="36" height="36" viewBox="0 0 36 36" style="position:absolute;top:0;left:0;">'
+            + '<circle cx="'+_cx+'" cy="'+_cy+'" r="'+_r+'" fill="'+typeColor+'" opacity="0.15"/>'
+            + '<circle cx="'+_cx+'" cy="'+_cy+'" r="'+_r+'" fill="none" stroke="'+typeColor+'" stroke-width="'+_stroke+'" opacity="0.25"/>'
+            + '<circle cx="'+_cx+'" cy="'+_cy+'" r="'+_r+'" fill="none" stroke="'+typeColor+'" stroke-width="'+_stroke+'" stroke-dasharray="'+_dash+' '+_circ+'" stroke-dashoffset="0" transform="rotate(-90 '+_cx+' '+_cy+')"/>'
+            + '<circle cx="'+_cx+'" cy="'+_cy+'" r="'+(+_r - +_stroke - 1)+'" fill="'+typeColor+'"/>'
+            + '<text x="'+_cx+'" y="'+_cy+'" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="11" font-weight="bold">'+(i+1)+'</text>'
+            + '</svg>'
+            + '</div>';
+        })()
+        + ' ' +
         '<div style="flex:1;min-width:0;">' +
           '<div class="pour-list-title">'+(p.po||'PO unknown')+'</div>' +
           '<div class="pour-list-sub">'+(p.date||'')+' '+(p.type?'&middot; '+p.type:'')+(_areaLabel?' &middot; <strong>'+_areaPct+'%</strong>':'')+'</div>' +
