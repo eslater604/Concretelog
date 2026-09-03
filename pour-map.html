@@ -387,8 +387,10 @@ let currentPts=[], pours=[], selected=null, tool='draw', smData=null;
 let currentLevel='P2', pendingPts=null, redrawingId=null;
 
 bg = new Image();
-bg.onload = () => { fitToWindow(); loadPours(); loadDrawingForLevel('P2'); };
+bg.onload = () => { fitToWindow(); loadPours(); };
 bg.src = FALLBACK_DRAWING;
+// Load level drawing after initial render (replaces fallback if uploaded version exists)
+window.addEventListener('load', () => loadDrawingForLevel('P2'));
 
 function fitToWindow(){scale=Math.min(wrap.clientWidth/DW,wrap.clientHeight/DH);if(scale*DW<wrap.clientWidth)scale=wrap.clientWidth/DW;resize();}
 function resize(){canvas.width=Math.round(DW*scale);canvas.height=Math.round(DH*scale);render();}
@@ -705,7 +707,7 @@ function focusPour(id) {
 }
 
 
-let redrawingId = null;
+// redrawingId declared above
 
 function startRedraw(id) {
   const p = pours.find(x=>x.id===id);
