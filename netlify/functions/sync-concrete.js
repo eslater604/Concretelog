@@ -193,27 +193,45 @@ exports.handler = async function (event) {
       };
     }).filter(Boolean);
 
-    // Attach full mix data to each PO from the already-processed pours array
+    // Attach mix data to each PO directly from the raw row, keyed by row
+    const rowByPo = {};
+    for (const row of sheet.rows) {
+      const byIdx = {};
+      for (const cell of row.cells) {
+        const idx = colIndexById[cell.columnId];
+        if (idx !== undefined) byIdx[idx] = cell.value;
+      }
+      const po = byIdx[poColIdx] || byIdx[poNumColIdx];
+      if (po) rowByPo[String(po)] = byIdx;
+    }
+
     pos.forEach(po => {
-      po.mixes = pours
-        .filter(p => {
-          const rowPo = sheet.rows.find(r => {
-            const byIdx = {};
-            for (const cell of r.cells) { const idx = colIndexById[cell.columnId]; if (idx !== undefined) byIdx[idx] = cell.value; }
-            return String(byIdx[poColIdx] || byIdx[poNumColIdx] || '') === po.po;
-          });
-          return !!rowPo;
-        })
-        .map(p => ({
-          mixCode: p.mixCode,
-          mixOrdered: null,
-          rate: p.rate,
-          volume: p.volume,
-          level: p.level,
-          location: p.location,
-          concreteCost: p.price || p.volume * p.rate,
-          admixtures: []
-        }));
+      const byIdx = rowByPo[po.po] || {};
+      const mixes = [];
+      [
+        // [orderedIdx, rateIdx, volIdx, lvlIdx, locIdx, priceIdx]
+        [11, 12, 13, 14, 15, 18],
+        [20, 21, 22, 23, 24, 27],
+        [29, 30, 31, 32, 33, 36],
+      ].forEach(([ordIdx, rateIdx, volIdx, lvlIdx, locIdx, priceIdx], i) => {
+        const ordered = byIdx[ordIdx];
+        const vol = num(byIdx[volIdx]);
+        const level = byIdx[lvlIdx];
+        const location = byIdx[locIdx];
+        if (!ordered && !vol) return;
+        const mixCode = ordered ? String(ordered).trim().split(/[\s-]/)[0] : null;
+        mixes.push({
+          mixNum: i + 1,
+          mixCode,
+          mixOrdered: ordered ? String(ordered) : null,
+          rate: num(byIdx[rateIdx]),
+          volume: vol,
+          level: level ? String(level) : null,
+          location: location ? String(location) : null,
+          concreteCost: num(byIdx[priceIdx]),
+        });
+      });
+      po.mixes = mixes;
     });
 
     return respond(200, {
