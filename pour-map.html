@@ -97,6 +97,7 @@ canvas{display:block;}
   <div class="header-actions">
     <span id="sync-status">Not synced</span>
     <button class="hbtn hbtn-ghost" onclick="syncData()">&#8635; Sync</button>
+    <button class="hbtn hbtn-ghost" onclick="document.getElementById('upload-overlay').style.display='flex'" title="Upload drawing for this level">&#8593; Drawing</button>
     <a href="index.html" class="hbtn hbtn-white">Dashboard</a>
   </div>
 </header>
@@ -120,6 +121,7 @@ canvas{display:block;}
   <button class="tbtn" onclick="zoomIn()">&#43;</button>
   <button class="tbtn" onclick="zoomOut()">&#8722;</button>
   <button class="tbtn" onclick="resetZoom()">Fit</button>
+  <span id="drawing-badge" style="font-size:11px;padding:3px 8px;border-radius:999px;background:var(--border);color:var(--text-muted);display:none;"></span>
   <span id="status-bar">Select "Log pour" then click points on the plan — double-click to close</span>
 </div>
 
@@ -152,6 +154,40 @@ canvas{display:block;}
   </div>
 </div>
 
+<!-- Upload drawing overlay -->
+<div class="overlay" id="upload-overlay" style="display:none;">
+  <div class="modal">
+    <h3>&#8593; Upload drawing</h3>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:1rem;">
+      Upload a PDF or image of the structural drawing for a level.
+      It will be stored in the cloud and loaded automatically whenever that level is selected.
+    </p>
+    <div class="fg">
+      <label>Level</label>
+      <select id="upload-level">
+        <option value="P2">P2</option>
+        <option value="P1">P1</option>
+        <option value="P1a">P1a</option>
+        <option value="1">Level 1</option>
+        <option value="2">Level 2</option>
+        <option value="3">Level 3</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Drawing file (PDF or image)</label>
+      <input type="file" id="upload-file" accept=".pdf,image/*" style="background:#fff;"/>
+    </div>
+    <div id="upload-preview" style="margin-top:10px;display:none;">
+      <img id="upload-preview-img" style="max-width:100%;border-radius:6px;border:1px solid var(--border);"/>
+    </div>
+    <div id="upload-status" style="font-size:12px;color:var(--text-muted);margin-top:8px;"></div>
+    <div class="modal-actions">
+      <button class="mbtn mbtn-cancel" onclick="document.getElementById('upload-overlay').style.display='none'">Cancel</button>
+      <button class="mbtn mbtn-save" id="upload-save-btn" onclick="uploadDrawing()">Upload &amp; save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Pour form -->
 <div class="overlay" id="pour-overlay" style="display:none;">
   <div class="modal">
@@ -179,7 +215,148 @@ canvas{display:block;}
 </div>
 
 <script>
-// ── State ─────────────────────────────────────────────────────────────────────
+// ── Drawing management ────────────────────────────────────────────────────────
+const FALLBACK_DRAWING = 'P2_FDN_clean.png'; // fallback if no upload yet
+const drawingCache = {}; // level -> dataUrl
+
+async function loadDrawingForLevel(level) {
+  if (drawingCache[level]) {
+    setBg(drawingCache[level]);
+    return;
+  }
+  try {
+    const res = await fetch(`/.netlify/functions/load-drawing?level=${encodeURIComponent(level)}`);
+    if (res.ok) {
+      const data = await res.json();
+      drawingCache[level] = data.dataUrl;
+      setBg(data.dataUrl);
+      updateDrawingBadge(level, data.uploadedAt);
+      return;
+    }
+  } catch(e) {}
+  // No uploaded drawing — use fallback for P2, blank canvas for others
+  if (level === 'P2') {
+    setBg(FALLBACK_DRAWING);
+    updateDrawingBadge(level, null);
+  } else {
+    setBg(null);
+    updateDrawingBadge(level, null);
+  }
+}
+
+function setBg(src) {
+  bg = new Image();
+  if (src) {
+    bg.onload = () => { fitToWindow(); render(); };
+    bg.src = src;
+  } else {
+    fitToWindow(); render();
+  }
+}
+
+function updateDrawingBadge(level, uploadedAt) {
+  const badge = document.getElementById('drawing-badge');
+  if (uploadedAt) {
+    badge.textContent = `Drawing: Level ${level} · uploaded ${new Date(uploadedAt).toLocaleDateString()}`;
+    badge.style.background = 'var(--green-bg)';
+    badge.style.color = '#3b6d11';
+  } else {
+    badge.textContent = level === 'P2' ? `Drawing: Level ${level} · default` : `No drawing uploaded for Level ${level}`;
+    badge.style.background = 'var(--border)';
+    badge.style.color = 'var(--text-muted)';
+  }
+  badge.style.display = '';
+}
+
+// File preview
+document.getElementById('upload-file').addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file) return;
+  const status = document.getElementById('upload-status');
+  const preview = document.getElementById('upload-preview');
+  const previewImg = document.getElementById('upload-preview-img');
+  status.textContent = 'Processing...';
+  preview.style.display = 'none';
+
+  if (file.type === 'application/pdf') {
+    status.textContent = `PDF selected: ${file.name} (${(file.size/1024).toFixed(0)} KB) — will be converted on upload`;
+  } else if (file.type.startsWith('image/')) {
+    const url = URL.createObjectURL(file);
+    previewImg.src = url;
+    preview.style.display = '';
+    status.textContent = `Image selected: ${file.name} (${(file.size/1024).toFixed(0)} KB)`;
+  } else {
+    status.textContent = 'Please select a PDF or image file.';
+  }
+});
+
+async function uploadDrawing() {
+  const level = document.getElementById('upload-level').value;
+  const file = document.getElementById('upload-file').files[0];
+  const status = document.getElementById('upload-status');
+  const btn = document.getElementById('upload-save-btn');
+  if (!file) { status.textContent = 'Please select a file first.'; return; }
+  btn.disabled = true;
+  status.textContent = 'Converting and uploading...';
+  try {
+    let dataUrl;
+    if (file.type.startsWith('image/')) {
+      dataUrl = await fileToDataUrl(file);
+    } else if (file.type === 'application/pdf') {
+      // Convert PDF via canvas using PDF.js
+      dataUrl = await pdfToDataUrl(file);
+    } else {
+      status.textContent = 'Unsupported file type.'; btn.disabled = false; return;
+    }
+    // Send to cloud
+    const res = await fetch('/.netlify/functions/save-drawing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level, dataUrl })
+    });
+    if (!res.ok) throw new Error('Save failed');
+    drawingCache[level] = dataUrl;
+    status.textContent = `✓ Drawing for Level ${level} saved successfully.`;
+    if (level === currentLevel) { setBg(dataUrl); updateDrawingBadge(level, new Date().toISOString()); }
+    setTimeout(() => { document.getElementById('upload-overlay').style.display = 'none'; }, 1200);
+  } catch(e) {
+    status.textContent = 'Upload failed: ' + e.message;
+  }
+  btn.disabled = false;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function pdfToDataUrl(file) {
+  // Load PDF.js from CDN
+  if (!window.pdfjsLib) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const page = await pdf.getPage(1);
+  // Render at 1.5x scale for quality
+  const viewport = page.getViewport({ scale: 1.5 });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+  return canvas.toDataURL('image/jpeg', 0.88);
+}
 const TYPE_COLORS = {
   'Footings':'#d4725a','Walls':'#d4a85a','Columns':'#5a9ed4',
   'Slabs on grade':'#6dc48a','Suspended slab':'#9a7ed4','Blinding':'#c4b87e',
@@ -203,8 +380,9 @@ let bg=new Image(), scale=1;
 let currentPts=[], pours=[], selected=null, tool='draw', smData=null;
 let currentLevel='P2', pendingPts=null;
 
-bg.src='P2_FDN_crop.png';
-bg.onload=()=>{fitToWindow();loadPours();};
+bg = new Image();
+bg.onload = () => { fitToWindow(); loadPours(); loadDrawingForLevel('P2'); };
+bg.src = FALLBACK_DRAWING;
 
 function fitToWindow(){scale=Math.min(wrap.clientWidth/DW,wrap.clientHeight/DH);resize();}
 function resize(){canvas.width=Math.round(DW*scale);canvas.height=Math.round(DH*scale);render();}
@@ -307,7 +485,9 @@ function setStatus(m){document.getElementById('status-bar').textContent=m;}
 function switchLevel(){
   currentLevel=document.getElementById('level-sel').value;
   document.getElementById('level-label').textContent='Level '+currentLevel;
-  selectPour(null);render();
+  document.getElementById('upload-level').value=currentLevel;
+  selectPour(null);
+  loadDrawingForLevel(currentLevel);
 }
 
 // ── Pour form ─────────────────────────────────────────────────────────────────
