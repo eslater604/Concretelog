@@ -355,11 +355,12 @@ async function uploadDrawing() {
   btn.disabled = true;
   status.textContent = `Reading file (${(file.size/1024).toFixed(0)}KB)...`;
   try {
-    // Send raw file as base64 — no pre-rendering, render happens client-side on load
+    // Send raw PDF as base64 dataUrl - no pre-rendering
     const base64 = await fileToBase64(file);
     const dataUrl = `data:${file.type};base64,${base64}`;
     const sizeKB = Math.round(base64.length * 0.75 / 1024);
-    status.textContent = `Uploading ${sizeKB}KB...`;
+    status.textContent = `Uploading ${sizeKB}KB to cloud...`;
+    console.log('Uploading drawing:', { level, fileType: file.type, sizeKB, base64len: base64.length });
 
     const res = await fetch('/.netlify/functions/save-drawing', {
       method: 'POST',
