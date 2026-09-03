@@ -908,7 +908,6 @@ function buildPourList() {
     const bl = pct!==null&&pct>0?(pct>100?pct.toFixed(1)+'% over':pct.toFixed(1)+'%'):'';
     const typeColor = TYPE_COLORS[p.type||guessType(p)]||'#999';
     const mixSummary = (p.mixes||[]).filter(m=>m.volume).map(m=>(m.mixCode||'?')+' '+m.volume+'m³').join(', ');
-    const mixSummary = (p.mixes||[]).filter(m=>m.volume).map(m=>(m.mixCode||'?')+' '+m.volume+'m³').join(', ');
     const shapeCount = getShapes(p).length;
     const isOpen = selected && selected.id === p.id;
     const _type = p.type||guessType(p);
