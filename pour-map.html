@@ -107,17 +107,22 @@ canvas{display:block;}
   <div class="header-actions">
     <span id="sync-status">Not synced</span>
     <button class="hbtn hbtn-ghost" onclick="syncData()">&#8635; Sync</button>
-    <button class="hbtn hbtn-ghost" onclick="document.getElementById('upload-overlay').style.display='flex'" title="Upload drawing for this level">&#8593; Drawing</button>
+    <button class="hbtn hbtn-ghost" id="upload-btn" onclick="document.getElementById('upload-overlay').style.display='flex'" title="Upload drawing for this level">&#8593; Drawing</button>
     <a href="index.html" class="hbtn hbtn-white">Dashboard</a>
   </div>
 </header>
 
 <div class="toolbar">
-  <div style="display:flex;gap:6px;">
-    <button class="tbtn" id="tool-select" onclick="setTool('select')">&#9654; Select</button>
-    <button class="tbtn active" id="tool-draw" onclick="setTool('draw')">&#9651; Log pour</button>
-  </div>
+  <button class="tbtn" id="mode-toggle" onclick="toggleMode()" style="font-weight:700;">&#128274; Edit mode</button>
   <div class="tsep"></div>
+  <div id="editor-tools" style="display:flex;gap:6px;align-items:center;">
+    <button class="tbtn active" id="tool-draw" onclick="setTool('draw')">&#9651; Log pour</button>
+    <button class="tbtn" id="tool-select" onclick="setTool('select')">&#9654; Select</button>
+    <div class="tsep"></div>
+    <button class="tbtn" onclick="clearLastPoint()" id="undo-btn" style="display:none;">&#8592; Undo point</button>
+    <button class="tbtn" onclick="cancelDraw()" id="cancel-btn" style="display:none;">&#215; Cancel</button>
+    <div class="tsep"></div>
+  </div>
   <select class="tsel" id="level-sel" onchange="switchLevel()">
         <option value="P2">P2</option>
         <option value="P1">P1</option>
@@ -148,9 +153,6 @@ canvas{display:block;}
         <option value="24">Level 24</option>
         <option value="25">Level 25</option>
   </select>
-  <div class="tsep"></div>
-  <button class="tbtn" onclick="clearLastPoint()" id="undo-btn" style="display:none;">&#8592; Undo point</button>
-  <button class="tbtn" onclick="cancelDraw()" id="cancel-btn" style="display:none;">&#215; Cancel</button>
   <div class="tsep"></div>
   <button class="tbtn" onclick="zoomIn()">&#43;</button>
   <button class="tbtn" onclick="zoomOut()">&#8722;</button>
@@ -585,7 +587,7 @@ function hexRgb(hex){return hex?[parseInt(hex.slice(1,3),16),parseInt(hex.slice(
 // ---- Input ------------------------------------------------------------------------------------------------------------------------------------------
 canvas.addEventListener('click',e=>{
   const pt=evtPt(e);
-  if(tool==='draw'){
+  if(tool==='draw' && editorMode){
     currentPts.push(pt);render();
     setStatus(`${currentPts.length} points -- double-click to close and link PO`);
     document.getElementById('cancel-btn').style.display='';
@@ -603,6 +605,7 @@ canvas.addEventListener('click',e=>{
   }
 });
 canvas.addEventListener('dblclick',e=>{
+  if(!editorMode) return;
   if(tool==='draw'&&currentPts.length>=3){
     currentPts.pop();
     if(redrawingId){
@@ -635,6 +638,34 @@ function ptIn(pt,pts){
 }
 
 // ---- Tools ------------------------------------------------------------------------------------------------------------------------------------------
+
+// ---- Viewer / Editor mode --------------------------------------------------
+let editorMode = true;
+
+function toggleMode() {
+  editorMode = !editorMode;
+  const btn = document.getElementById('mode-toggle');
+  const editorTools = document.getElementById('editor-tools');
+  const uploadBtn = document.getElementById('upload-btn');
+  if (editorMode) {
+    btn.innerHTML = '&#128274; Edit mode';
+    btn.style.background = 'var(--bg)';
+    btn.style.color = 'var(--text-secondary)';
+    editorTools.style.display = 'flex';
+    if (uploadBtn) uploadBtn.style.display = '';
+    wrap.className = 'canvas-wrap';
+  } else {
+    cancelDraw();
+    btn.innerHTML = '&#128065; View mode';
+    btn.style.background = '#eaf3de';
+    btn.style.color = '#3b6d11';
+    editorTools.style.display = 'none';
+    if (uploadBtn) uploadBtn.style.display = 'none';
+    wrap.className = 'canvas-wrap mode-select';
+  }
+  setStatus(editorMode ? 'Editor mode -- draw and log pours' : 'Viewer mode -- read only');
+}
+
 function setTool(t){
   tool=t;
   document.getElementById('tool-select').classList.toggle('active',t==='select');
@@ -811,8 +842,8 @@ function buildPourList() {
           '</div>').join('') +
         '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">' +
           '<button class="tbtn" style="font-size:11px;padding:3px 10px;" onclick="focusPour(\''+p.id+'\')">Focus</button>' +
-          '<button class="tbtn" style="font-size:11px;padding:3px 10px;background:#e6f1fb;color:#185fa5;border-color:#b3d4f5;" onclick="startRedraw(\''+p.id+'\')">Redraw</button>' +
-          '<button class="tbtn" style="font-size:11px;padding:3px 10px;background:var(--red-bg);color:var(--red);border-color:#fcc;" onclick="deletePourById(\''+p.id+'\')">Delete</button>' +
+          (editorMode ? '<button class="tbtn" style="font-size:11px;padding:3px 10px;background:#e6f1fb;color:#185fa5;border-color:#b3d4f5;" onclick="startRedraw(\''+p.id+'\')">Redraw</button>' : '') +
+          (editorMode ? '<button class="tbtn" style="font-size:11px;padding:3px 10px;background:var(--red-bg);color:var(--red);border-color:#fcc;" onclick="deletePourById(\''+p.id+'\')">Delete</button>' : '') +
         '</div>' +
         '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">'+(p.createdAt?new Date(p.createdAt).toLocaleString():'')+'</div>' +
       '</div></div>';
