@@ -5,16 +5,25 @@ exports.handler = async function(event) {
     return { statusCode: 405, body: "Method not allowed" };
   try {
     const body = JSON.parse(event.body);
-    // body: { level: "P2", dataUrl: "data:image/png;base64,..." }
     if (!body.level || !body.dataUrl)
-      return { statusCode: 400, body: "Missing level or dataUrl" };
+      return { statusCode: 400, body: JSON.stringify({ error: "Missing level or dataUrl" }) };
+
+    const sizeKB = Math.round(Buffer.byteLength(body.dataUrl, 'utf8') / 1024);
+    if (sizeKB > 4800)
+      return { statusCode: 413, body: JSON.stringify({ error: `Drawing too large (${sizeKB}KB). Try a lower resolution or higher compression.` }) };
+
     const store = getStore("drawings");
-    await store.setJSON(`drawing-${body.level}`, {
+    // Store metadata and dataUrl separately to stay under blob limits
+    await store.set(`drawing-${body.level}`, body.dataUrl);
+    await store.setJSON(`drawing-meta-${body.level}`, {
       level: body.level,
-      dataUrl: body.dataUrl,
-      uploadedAt: new Date().toISOString()
+      uploadedAt: new Date().toISOString(),
+      sizeKB
     });
-    return { statusCode: 200, body: JSON.stringify({ ok: true, level: body.level }) };
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ ok: true, level: body.level, sizeKB })
+    };
   } catch(e) {
     return { statusCode: 500, body: JSON.stringify({ error: String(e) }) };
   }
