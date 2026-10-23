@@ -250,6 +250,7 @@
   .lvl-chip.none { background: #ECEBE6; color: var(--text-secondary); }
   .lvl-btn { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; white-space: nowrap; }
   .lvl-btn:hover { border-color: var(--text-muted); }
+  .lvl-btn:disabled { opacity: .55; cursor: default; }
   .lvl-btn.primary { background: var(--brand-red); border-color: var(--brand-red); color: #fff; }
   .lvl-detail { margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
   .lvl-detail .cat { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
@@ -331,11 +332,11 @@
     <div class="db-grid" id="rows"><div class="empty">Select a level or type above to view data.</div></div>
 
     <p class="section-label" style="margin-top:1.5rem;">Level completion <span style="text-transform:none;letter-spacing:0;font-weight:400;">&mdash; mark a level complete once its concrete is finished to compare its final volume and cost against the estimate</span></p>
+    <p id="level-msg" style="display:none;font-size:13px;color:var(--amber);background:#FAEEDA;border-radius:8px;padding:8px 12px;margin:0 0 8px;"></p>
     <div class="card">
       <div id="level-summary"></div>
       <div id="level-rows"><div class="empty">Click "Sync now" to load the latest data.</div></div>
     </div>
-    <p id="level-msg" style="font-size:12px;color:var(--text-muted);margin:6px 2px 0;"></p>
 
     <p class="section-label" style="margin-top:1.5rem;">By precon estimate mix line <span style="text-transform:none;letter-spacing:0;font-weight:400;">&mdash; actual mixes ordered vs the takeoff's mix list; some precon lines are combined where one mix serves several</span> <span id="mix-scope" style="text-transform:none;letter-spacing:0;font-weight:500;"></span></p>
     <div class="card">
@@ -519,7 +520,9 @@ let _pours = [];
 let _mixRows = [];
 let _levels = [];
 let _levelStatus = {};      // { L1: { completedAt: ... } }  - marks saved on the site (not in Smartsheet)
-let _levelStatusOk = true;
+let _levelSource = 'server';   // 'server' = shared marks; 'device' = fallback kept in this browser only
+let _levelNote = '';           // visible explanation shown above the Level completion list
+let _levelBusy = null;         // level code currently being saved
 
 function filterRows() {
   const lvl = document.getElementById('sel-level').value;
@@ -596,42 +599,70 @@ function renderDonutGrid(rows) {
   });
 }
 
-async function loadLevelStatus() {
+const LVL_LOCAL_KEY = 'concretelog.levelStatus.v1';
+function readLocalLevels() {
+  try { return JSON.parse(localStorage.getItem(LVL_LOCAL_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+function writeLocalLevels(o) {
+  try { localStorage.setItem(LVL_LOCAL_KEY, JSON.stringify(o)); return true; } catch (e) { return false; }
+}
+
+// Talks to the level-status function; throws an Error with a readable reason.
+async function levelApi(method, body) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 12000);
   try {
-    const res = await fetch('/.netlify/functions/level-status');
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.error || 'Could not load');
-    _levelStatus = d.completed || {};
-    _levelStatusOk = true;
+    const res = await fetch('/.netlify/functions/level-status', {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: ctl.signal
+    });
+    let d = null;
+    try { d = await res.json(); } catch (e) { /* reply was not JSON */ }
+    if (!res.ok || !d || !d.completed) {
+      throw new Error((d && d.error) ||
+        (res.status === 404 ? 'the level-status function is not on the site (HTTP 404)' : 'unexpected reply from the server (HTTP ' + res.status + ')'));
+    }
+    return d.completed;
   } catch (e) {
-    _levelStatus = {};
-    _levelStatusOk = false;
+    throw new Error(e.name === 'AbortError' ? 'the server took too long to answer' : e.message);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-let _levelSaving = false;
-async function toggleLevelComplete(code) {
-  if (_levelSaving) return;          // ignore a second click while a save is in flight
-  _levelSaving = true;
-  const msg = document.getElementById('level-msg');
-  const makeComplete = !_levelStatus[code];
-  msg.textContent = 'Saving...';
+async function loadLevelStatus() {
   try {
-    const res = await fetch('/.netlify/functions/level-status', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ level: code, complete: makeComplete })
-    });
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.error || 'Save failed');
-    _levelStatus = d.completed || {};
-    _levelStatusOk = true;
-    msg.textContent = '';
+    _levelStatus = await levelApi('GET');
+    _levelSource = 'server';
+    _levelNote = '';
   } catch (e) {
-    msg.textContent = 'Could not save the change: ' + e.message;
-    _levelSaving = false;
-    return;
+    _levelStatus = readLocalLevels();
+    _levelSource = 'device';
+    _levelNote = 'Could not reach the saved level marks on the server (' + e.message + '). Marks are kept on this device only until that is fixed.';
   }
-  _levelSaving = false;
+}
+
+async function toggleLevelComplete(code) {
+  if (_levelBusy) return;             // ignore clicks while a save is in flight
+  const makeComplete = !_levelStatus[code];
+  _levelBusy = code;
+  renderLevelPanel();                 // button switches to "Saving..." straight away
+  try {
+    _levelStatus = await levelApi('POST', { level: code, complete: makeComplete });
+    _levelSource = 'server';
+    _levelNote = '';
+  } catch (e) {
+    // Server save failed: keep the change on this device so the button still works, and say so.
+    const local = readLocalLevels();
+    if (makeComplete) local[code] = { completedAt: new Date().toISOString() }; else delete local[code];
+    writeLocalLevels(local);
+    _levelStatus = local;
+    _levelSource = 'device';
+    _levelNote = 'Could not save to the server (' + e.message + '). This change is saved on this device only.';
+  }
+  _levelBusy = null;
   renderLevelPanel();
   filterRows();
 }
@@ -641,7 +672,8 @@ function renderLevelPanel() {
   const sumEl = document.getElementById('level-summary');
   const msgEl = document.getElementById('level-msg');
   if (!rowsEl) return;
-  if (!_levelStatusOk && !msgEl.textContent) msgEl.textContent = 'Level completion marks could not be loaded, so none are shown right now.';
+  msgEl.textContent = _levelNote;
+  msgEl.style.display = _levelNote ? 'block' : 'none';
   if (!_levels.length) { sumEl.innerHTML = ''; rowsEl.innerHTML = '<div class="empty">No level data yet.</div>'; return; }
 
   const f1 = n => n.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -703,7 +735,7 @@ function renderLevelPanel() {
       <div class="lvl-row${isDone ? ' done' : ''}">
         <div class="lvl-head">
           <span><span class="lvl-name">${l.level}</span>${chip}${status}${unmappedNote}</span>
-          <button class="lvl-btn${isDone ? '' : ' primary'}" onclick="toggleLevelComplete('${l.level}')">${isDone ? 'Reopen' : 'Mark complete'}</button>
+          <button class="lvl-btn${isDone ? '' : ' primary'}" ${_levelBusy ? 'disabled' : ''} onclick="toggleLevelComplete('${l.level}')">${_levelBusy === l.level ? 'Saving\u2026' : (isDone ? 'Reopen' : 'Mark complete')}</button>
         </div>
         <div class="bar-track"><div class="bar-fill" style="width:${pct === null ? 0 : Math.min(pct, 100)}%;background:${barColor};"></div></div>
         <div class="row-bottom"><span>${f1(act)} of ${est > 0 ? f1(est) : '\u2014'} m\u00b3${pend}</span><span>${money(l.actualCost)}</span></div>
