@@ -222,6 +222,17 @@
     font-size: 15px; line-height: 1;
   }
   .sec-toggle.collapsed .sec-chev { background: #fff; color: var(--brand-red); }
+  .bal-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .bal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .bal-title { font-weight: 600; font-size: 15px; }
+  .bal-net { font-size: 18px; font-weight: 700; }
+  .bal-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  .bal-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+  .bal-table th { text-align: right; font-weight: 600; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  .bal-table td { text-align: right; padding: 6px 6px; border-bottom: 1px solid var(--border); }
+  .bal-table th:first-child, .bal-table td:first-child { text-align: left; }
+  .bal-table tr.notcounted td { color: var(--text-muted); }
+  .bal-table tfoot td { font-weight: 700; border-top: 1px solid var(--text-muted); border-bottom: none; }
   .card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -356,6 +367,7 @@
         <option value="">Select mix</option>
       </select>
     </div>
+    <div id="level-balance" style="display:none;margin-bottom:12px;"></div>
     <div class="db-grid" id="rows"><div class="empty">Select a level or type above to view data.</div></div>
     </div>
 
@@ -606,6 +618,7 @@ function filterRows() {
   );
   renderDonutGrid(filtered);
   renderMixForSelection();
+  renderLevelBalance();
 }
 
 function populateFilters(rows) {
@@ -790,6 +803,79 @@ async function toggleLevelComplete(code, confirmed) {
   _levelBusy = null;
   renderLevelPanel();
   filterRows();
+}
+
+// "Level balance" tile: shown when a level is picked in the dropdown. Adds up every
+// category on that level against its estimate, so over in one category and under in
+// another net out to one over/under figure.
+function renderLevelBalance() {
+  const el = document.getElementById('level-balance');
+  if (!el) return;
+  const lvl = document.getElementById('sel-level').value;
+  if (!lvl || lvl === 'ALL') { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  const l = _levels.find(x => x.level === lvl);
+  if (!l) { el.innerHTML = `<div class="bal-card"><span class="bal-title">${lvl} balance</span><div class="bal-sub">No data for this level yet.</div></div>`; return; }
+
+  const f1 = n => n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const money = n => '$' + Math.round(Math.abs(n)).toLocaleString();
+  const sgn = n => (n > 0.05 ? '+' + f1(n) : (n < -0.05 ? '\u2212' + f1(-n) : '0'));
+  const colorOf = n => n > 0.05 ? 'var(--red)' : (n < -0.05 ? 'var(--green)' : 'var(--text-secondary)');
+  const done = !!_levelStatus[l.level];
+  const cats = l.categories.filter(c => c.estimateVolume > 0 || c.actualVolume > 0);
+  // Counted in the balance: every category once the level is complete; otherwise only
+  // categories that have started (an unpoured category is not "under", it is just not done yet).
+  const counted = c => done || c.actualVolume > 0;
+  const sum = (arr, k) => arr.reduce((t, c) => t + c[k], 0);
+  const inBal = cats.filter(counted);
+  const act = sum(inBal, 'actualVolume'), est = sum(inBal, 'estimateVolume');
+  const actC = sum(inBal, 'actualCost'), estC = sum(inBal, 'estimateCost');
+  const net = act - est;
+  const netC = actC - estC;
+
+  if (!l.estimateMapped) {
+    el.innerHTML = `<div class="bal-card"><div class="bal-head"><span class="bal-title">${l.level} balance</span></div>
+      <div class="bal-sub">This level is not in the takeoff, so there is no estimate to balance against. Poured so far: ${f1(l.actualVolume)} m\u00b3 &middot; ${money(l.actualCost)}.</div></div>`;
+    return;
+  }
+
+  const overs = inBal.filter(c => c.actualVolume - c.estimateVolume > 0.05).sort((a, b) => (b.actualVolume - b.estimateVolume) - (a.actualVolume - a.estimateVolume));
+  const unders = inBal.filter(c => c.actualVolume - c.estimateVolume < -0.05).sort((a, b) => (a.actualVolume - a.estimateVolume) - (b.actualVolume - b.estimateVolume));
+  const list = (arr) => arr.map(c => `${c.category} (${sgn(c.actualVolume - c.estimateVolume)})`).join(', ');
+  const nothingYet = !done && inBal.length === 0;
+  const where = nothingYet ? 'No category on this level has been poured yet.' : (overs.length || unders.length)
+    ? `${overs.length ? 'Over in: <strong style="color:var(--red)">' + list(overs) + '</strong>. ' : ''}${unders.length ? 'Under in: <strong style="color:var(--green)">' + list(unders) + '</strong>.' : ''}`
+    : 'Every category counted is right on its estimate.';
+  const word = Math.abs(net) < 0.05 ? 'on estimate' : (net > 0 ? 'over' : 'under');
+  const pctTxt = est > 0 ? ' (' + (net > 0 ? '+' : (net < 0 ? '\u2212' : '')) + Math.abs(net / est * 100).toFixed(1) + '%)' : '';
+  const fullPct = l.estimateVolume > 0 ? (l.actualVolume / l.estimateVolume * 100).toFixed(1) : null;
+
+  const rows = cats.map(c => {
+    const v = c.actualVolume - c.estimateVolume;
+    const notStarted = !done && c.actualVolume === 0;
+    const varCell = notStarted
+      ? '<span style="color:var(--text-muted)">not started</span>'
+      : (c.estimateVolume === 0
+          ? `<span style="color:var(--red)">${sgn(v)} (not in estimate)</span>`
+          : `<span style="color:${colorOf(v)}">${sgn(v)}</span>`);
+    return `<tr class="${notStarted ? 'notcounted' : ''}"><td>${c.category}</td><td>${f1(c.actualVolume)}</td><td>${c.estimateVolume > 0 ? f1(c.estimateVolume) : '\u2014'}</td><td>${varCell}</td></tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="bal-card">
+      <div class="bal-head">
+        <span class="bal-title">${l.level} balance across all categories${done ? ' <span class="lvl-badge">\u2713 level complete</span>' : ''}</span>
+        <span class="bal-net" style="color:${nothingYet ? 'var(--text-muted)' : colorOf(net)}">${nothingYet ? 'Not started' : (done ? 'Final' : 'So far') + ': ' + (Math.abs(net) < 0.05 ? 'on estimate' : f1(Math.abs(net)) + ' m\u00b3 ' + word) + pctTxt}</span>
+      </div>
+      <div class="bal-sub">${where}</div>
+      ${nothingYet ? '' : `<div class="bal-sub">Volume counted: <strong>${f1(act)} m\u00b3</strong> poured vs ${f1(est)} m\u00b3 estimated &middot; Cost: <strong>${money(actC)}</strong> vs ${money(estC)} estimated (<span style="color:${colorOf(netC)}">${Math.abs(netC) < 0.5 ? 'on estimate' : money(netC) + (netC > 0 ? ' over' : ' under')}</span>)</div>`}
+      ${done ? '' : `<div class="bal-sub">Level not marked complete: only categories that have started are counted, so unpoured categories don't show as under. Whole level so far: ${f1(l.actualVolume)} of ${f1(l.estimateVolume)} m\u00b3${fullPct !== null ? ' (' + fullPct + '%)' : ''}.</div>`}
+      <table class="bal-table">
+        <thead><tr><th>Category</th><th>Poured m\u00b3</th><th>Estimate m\u00b3</th><th>Over / under</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td>${done ? 'Level total' : 'Counted total'}</td><td>${f1(act)}</td><td>${f1(est)}</td><td style="color:${colorOf(net)}">${sgn(net)}</td></tr></tfoot>
+      </table>
+    </div>`;
 }
 
 function renderLevelPanel() {
