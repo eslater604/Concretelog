@@ -231,6 +231,18 @@
   .ms-all { font-weight: 600; border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0; margin-bottom: 4px; }
   .ms-foot { display: flex; justify-content: space-between; gap: 8px; padding: 8px 4px 2px; margin-top: 4px; border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--card); }
   .bal-sec { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 0; }
+  .note-list { margin-top: 6px; }
+  .note { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .note:last-child { border-bottom: none; }
+  .note-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-bottom: 3px; }
+  .note-chip { background: #ECEBE6; color: var(--text-secondary); border-radius: 10px; padding: 1px 8px; font-weight: 600; }
+  .note-text { white-space: pre-wrap; word-break: break-word; color: var(--text); }
+  .note-form { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .note-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .note-form textarea, .note-form input, .note-form select { font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--text); }
+  .note-form textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+  .note-banner { font-size: 12px; color: var(--amber); background: #FAEEDA; border-radius: 8px; padding: 6px 10px; margin-top: 8px; }
+  .note-card-line { font-size: 12px; color: var(--text-secondary); font-style: italic; margin-top: 4px; }
   .bal-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
   .bal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .bal-title { font-weight: 600; font-size: 15px; }
@@ -482,6 +494,7 @@ async function sync() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Sync failed');
     await loadLevelStatus();
+    await loadNotes();
     render(data);
     status.textContent = 'Last synced ' + new Date(data.updatedAt).toLocaleString();
   } catch (err) {
@@ -598,6 +611,213 @@ function sectionKeys(e) {
   }
 }
 
+// ---- Notes: why a level / category is over or under ----
+// Saved on the site (shared). Changes made in this browser are remembered for a few minutes and
+// laid over the server's list, because the server's list can lag behind a change you just made.
+// If the server can't be reached, notes are kept on this device and sent up when it comes back.
+let _notes = [];
+let _notesNote = '';           // visible explanation when notes could not be saved/loaded on the server
+let _noteDraft = { level: null, category: '', text: '', by: '' };
+let _noteBusy = false;
+let _noteConfirm = null;       // note id waiting for "Yes, delete"
+let _noteFormStale = false;    // true right after a save: the old text box must not be read back
+const NOTES_RECENT_KEY = 'concretelog.notesRecent.v1';
+const NOTES_LOCAL_KEY = 'concretelog.notesLocal.v1';
+const NOTE_NAME_KEY = 'concretelog.noteName.v1';
+const NOTES_RECENT_MS = 5 * 60 * 1000;
+
+function esc(t) {
+  return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function lsRead(key, fallback) {
+  try { const v = JSON.parse(localStorage.getItem(key)); return v === null || v === undefined ? fallback : v; } catch (e) { return fallback; }
+}
+function lsWrite(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { /* ignore */ }
+}
+function sortNotes(list) {
+  return list.slice().sort((a, b) => (a.at < b.at ? 1 : (a.at > b.at ? -1 : 0)));
+}
+try { _noteDraft.by = localStorage.getItem(NOTE_NAME_KEY) || ''; } catch (e) { /* ignore */ }
+
+async function notesApi(method, body) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const res = await fetch('/.netlify/functions/level-notes', {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: ctl.signal
+    });
+    let d = null;
+    try { d = await res.json(); } catch (e) { /* reply was not JSON */ }
+    if (!res.ok || !d || !Array.isArray(d.notes)) {
+      throw new Error((d && d.error) ||
+        (res.status === 404 ? 'the level-notes function is not on the site (HTTP 404)' : 'unexpected reply from the server (HTTP ' + res.status + ')'));
+    }
+    return d;
+  } catch (e) {
+    throw new Error(e.name === 'AbortError' ? 'the server took too long to answer' : e.message);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function rememberNoteAdd(note) {
+  const r = lsRead(NOTES_RECENT_KEY, { adds: [], dels: [] });
+  r.adds.push({ note, stamp: new Date().toISOString() });
+  lsWrite(NOTES_RECENT_KEY, r);
+}
+function rememberNoteDelete(id) {
+  const r = lsRead(NOTES_RECENT_KEY, { adds: [], dels: [] });
+  r.dels.push({ id, stamp: new Date().toISOString() });
+  lsWrite(NOTES_RECENT_KEY, r);
+}
+function applyNotesOverlay(server) {
+  const recent = lsRead(NOTES_RECENT_KEY, { adds: [], dels: [] });
+  const now = Date.now();
+  const byId = new Map(server.map(n => [n.id, n]));
+  const adds = [], dels = [];
+  for (const a of (recent.adds || [])) {
+    if (now - Date.parse(a.stamp) > NOTES_RECENT_MS) continue;     // old enough that the server has caught up
+    if (byId.has(a.note.id)) continue;                              // the server lists it now
+    byId.set(a.note.id, a.note); adds.push(a);
+  }
+  for (const d of (recent.dels || [])) {
+    if (now - Date.parse(d.stamp) > NOTES_RECENT_MS) continue;
+    if (!byId.has(d.id)) continue;                                  // the server no longer lists it
+    byId.delete(d.id); dels.push(d);
+  }
+  lsWrite(NOTES_RECENT_KEY, { adds, dels });
+  return sortNotes([...byId.values()]);
+}
+async function flushLocalNotes() {
+  const local = lsRead(NOTES_LOCAL_KEY, []);
+  if (!local.length) return;
+  const remaining = [];
+  for (let i = 0; i < local.length; i++) {
+    const n = local[i];
+    try {
+      const d = await notesApi('POST', { action: 'add', level: n.level, category: n.category, text: n.text, by: n.by, at: n.at });
+      rememberNoteAdd(d.note);
+      _notes = sortNotes([d.note].concat(_notes.filter(x => x.id !== d.note.id)));
+    } catch (e) { remaining.push.apply(remaining, local.slice(i)); break; }
+  }
+  lsWrite(NOTES_LOCAL_KEY, remaining);
+  if (remaining.length) {
+    _notes = sortNotes(_notes.concat(remaining));
+    _notesNote = remaining.length + ' note' + (remaining.length === 1 ? ' is' : 's are') + ' saved on this device only and will be sent to the server when it can be reached.';
+  }
+}
+async function loadNotes() {
+  try {
+    const d = await notesApi('GET');
+    _notes = applyNotesOverlay(d.notes);
+    _notesNote = '';
+    await flushLocalNotes();
+  } catch (e) {
+    _notes = sortNotes(lsRead(NOTES_LOCAL_KEY, []));
+    _notesNote = 'Could not reach the saved notes on the server (' + e.message + '). Notes are kept on this device only until that is fixed.';
+  }
+}
+function readNoteForm() {
+  const t = document.getElementById('note-text');
+  if (!t) return;
+  _noteDraft.text = t.value;
+  const by = document.getElementById('note-by'); if (by) _noteDraft.by = by.value;
+  const lv = document.getElementById('note-level'); if (lv) _noteDraft.level = lv.value;
+  const ct = document.getElementById('note-cat'); if (ct) _noteDraft.category = ct.value;
+}
+function noteLevelChanged() {
+  readNoteForm();
+  _noteDraft.category = '';
+  renderLevelBalance();
+}
+async function saveNote() {
+  if (_noteBusy) return;
+  readNoteForm();
+  const text = (_noteDraft.text || '').trim();
+  const msg = document.getElementById('note-msg');
+  if (!text) { if (msg) msg.textContent = 'Write the note first.'; return; }
+  const payload = { action: 'add', level: _noteDraft.level || '', category: _noteDraft.category || '', text, by: (_noteDraft.by || '').trim() };
+  _noteBusy = true;
+  renderLevelBalance();                       // button switches to "Saving..."
+  try {
+    const d = await notesApi('POST', payload);
+    rememberNoteAdd(d.note);
+    _notes = sortNotes([d.note].concat(_notes.filter(n => n.id !== d.note.id)));
+    _notesNote = '';
+  } catch (e) {
+    const note = { id: 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), level: payload.level, category: payload.category, text, by: payload.by, at: new Date().toISOString() };
+    const local = lsRead(NOTES_LOCAL_KEY, []); local.push(note); lsWrite(NOTES_LOCAL_KEY, local);
+    _notes = sortNotes([note].concat(_notes));
+    _notesNote = 'Could not save to the server (' + e.message + '). This note is saved on this device only.';
+  }
+  try { localStorage.setItem(NOTE_NAME_KEY, payload.by); } catch (e) { /* ignore */ }
+  _noteDraft.text = '';
+  _noteFormStale = true;
+  _noteBusy = false;
+  filterRows();
+}
+function askDeleteNote(id) { if (_noteBusy) return; readNoteForm(); _noteConfirm = id; renderLevelBalance(); }
+function cancelDeleteNote() { readNoteForm(); _noteConfirm = null; renderLevelBalance(); }
+async function deleteNote(id) {
+  if (_noteBusy) return;
+  readNoteForm();
+  _noteConfirm = null;
+  _noteBusy = true;
+  renderLevelBalance();
+  if (id.indexOf('local_') === 0) {
+    lsWrite(NOTES_LOCAL_KEY, lsRead(NOTES_LOCAL_KEY, []).filter(n => n.id !== id));
+    _notes = _notes.filter(n => n.id !== id);
+  } else {
+    try {
+      await notesApi('POST', { action: 'delete', id });
+      rememberNoteDelete(id);
+      _notes = _notes.filter(n => n.id !== id);
+    } catch (e) {
+      _notesNote = 'Could not delete the note (' + e.message + '). Try again in a moment.';
+    }
+  }
+  _noteBusy = false;
+  filterRows();
+}
+// The notes area inside the Level balance tile: notes for the ticked levels, plus the add form.
+function notesBlockHtml(ls) {
+  const levelOptions = ls.codes;
+  if (_noteDraft.level === null || (_noteDraft.level !== '' && !levelOptions.includes(_noteDraft.level))) _noteDraft.level = levelOptions[0] || '';
+  const lv = _levels.find(x => x.level === _noteDraft.level);
+  const catNames = lv ? lv.categories.filter(c => c.estimateVolume > 0 || c.actualVolume > 0).map(c => c.category) : [];
+  if (_noteDraft.category && !catNames.includes(_noteDraft.category)) _noteDraft.category = '';
+  const shown = _notes.filter(n => n.level === '' || ls.codes.includes(n.level));
+  const fmtDate = at => { const d = new Date(at); return isNaN(d) ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); };
+  const list = shown.length ? shown.map(n => {
+    const where = n.level ? esc(n.level) + (n.category ? ' \u00b7 ' + esc(n.category) : '') : 'Whole project';
+    const who = [n.by ? esc(n.by) : '', fmtDate(n.at)].filter(Boolean).join(' \u00b7 ');
+    const action = _noteConfirm === n.id
+      ? `<span>Delete this note? <button type="button" class="lvl-btn danger" ${_noteBusy ? 'disabled' : ''} onclick="deleteNote('${esc(n.id)}')">Yes, delete</button> <button type="button" class="lvl-btn" onclick="cancelDeleteNote()">Cancel</button></span>`
+      : `<button type="button" class="lvl-btn" ${_noteBusy ? 'disabled' : ''} onclick="askDeleteNote('${esc(n.id)}')">Delete</button>`;
+    return `<div class="note"><div class="note-meta"><span class="note-chip">${where}</span><span>${who}</span>${action}</div><div class="note-text">${esc(n.text)}</div></div>`;
+  }).join('') : '<div class="bal-sub">No notes yet for the selected levels.</div>';
+  const lvlOpts = levelOptions.map(c => `<option value="${esc(c)}" ${c === _noteDraft.level ? 'selected' : ''}>${esc(c)}</option>`).join('')
+    + `<option value="" ${_noteDraft.level === '' ? 'selected' : ''}>Whole project</option>`;
+  const catOpts = `<option value="">${_noteDraft.level ? 'Whole level' : 'General'}</option>`
+    + catNames.map(c => `<option value="${esc(c)}" ${c === _noteDraft.category ? 'selected' : ''}>${esc(c)}</option>`).join('');
+  return `
+    <div class="bal-sec">Notes &mdash; why is it over or under?</div>
+    ${_notesNote ? `<div class="note-banner">${esc(_notesNote)}</div>` : ''}
+    <div class="note-list">${list}</div>
+    <div class="note-form">
+      <div class="note-row">
+        <select id="note-level" onchange="noteLevelChanged()">${lvlOpts}</select>
+        <select id="note-cat" onchange="readNoteForm()">${catOpts}</select>
+        <input id="note-by" type="text" maxlength="40" placeholder="Your name (optional)" value="${esc(_noteDraft.by)}" oninput="readNoteForm()">
+      </div>
+      <textarea id="note-text" rows="3" maxlength="1000" placeholder="e.g. 45 MPa LPM used in lieu of puddle mix for the columns" oninput="readNoteForm()">${esc(_noteDraft.text)}</textarea>
+      <div><button type="button" class="lvl-btn primary" id="note-save" ${_noteBusy ? 'disabled' : ''} onclick="saveNote()">${_noteBusy ? 'Saving\u2026' : 'Add note'}</button> <span id="note-msg" style="font-size:12px;color:var(--amber);"></span></div>
+    </div>`;
+}
+
 // ---- Level multi-select (checkbox dropdown) ----
 const LEVEL_ORDER = ['P5', 'P4', 'P3', 'P2', 'P1'].concat(Array.from({ length: 35 }, (_, i) => 'L' + (i + 1)), ['Roof']);
 let _selLevels = [];
@@ -707,6 +927,10 @@ function renderDonutGrid(rows) {
     const t = unmapped ? { solid:'#9a9a94', light:'#ecebe6', color:'#6b6a64', label:'level not mapped' }
             : (pendingOnly ? { solid:'#9a9a94', light:'#ecebe6', color:'#6b6a64', label:'none complete yet' } : rowTheme(pct));
     const pctLabel = (pct === null || pendingOnly) ? '\u2014' : pct.toFixed(1) + '%';
+    const cardNotes = _notes.filter(n => n.level === r.level && n.category === r.category);
+    const noteLine = cardNotes.length
+      ? `<p class="db-vol note-card-line"><strong>Note:</strong> ${esc(cardNotes[0].text.length > 140 ? cardNotes[0].text.slice(0, 140) + '\u2026' : cardNotes[0].text)}${cardNotes.length > 1 ? ' (+' + (cardNotes.length - 1) + ' more)' : ''}</p>`
+      : '';
     const pendLine = r.pendingVolume > 0
       ? `<p class="db-vol" style="font-size:12px;color:var(--text-muted);">+ ${r.pendingVolume.toLocaleString(undefined,{maximumFractionDigits:1})} m\u00b3 ($${Math.round(r.pendingCost).toLocaleString()}) logged, not yet marked complete</p>`
       : '';
@@ -729,6 +953,7 @@ function renderDonutGrid(rows) {
             <p class="db-vol">${r.actualVolume.toLocaleString()} <span style="color:var(--text-muted)">of ${r.estimateVolume > 0 ? r.estimateVolume.toLocaleString() : '\u2014'} m\u00b3</span></p>
             <p class="db-vol">Remaining: <strong>${rem} m\u00b3</strong></p>
             ${pendLine}
+            ${noteLine}
           </div>
         </div>
       </div>`;
@@ -867,9 +1092,11 @@ async function toggleLevelComplete(code, confirmed) {
 function renderLevelBalance() {
   const el = document.getElementById('level-balance');
   if (!el) return;
+  if (_noteFormStale) _noteFormStale = false; else readNoteForm();   // keep a half-typed note when the tile redraws
   const ls = levelSelection();
   if (ls.none) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = '';
+  const setBalance = (html) => { el.innerHTML = html.replace(/<\/div>\s*$/, notesBlockHtml(ls) + '</div>'); };
 
   const f1 = n => n.toLocaleString(undefined, { maximumFractionDigits: 1 });
   const money = n => '$' + Math.round(Math.abs(n)).toLocaleString();
@@ -903,10 +1130,10 @@ function renderLevelBalance() {
   // ---------------- one level ----------------
   if (items.length === 1) {
     const { code, l } = items[0];
-    if (!l) { el.innerHTML = `<div class="bal-card"><span class="bal-title">${code} balance</span><div class="bal-sub">No data for this level yet.</div></div>`; return; }
+    if (!l) { setBalance(`<div class="bal-card"><span class="bal-title">${code} balance</span><div class="bal-sub">No data for this level yet.</div></div>`); return; }
     if (!l.estimateMapped) {
-      el.innerHTML = `<div class="bal-card"><div class="bal-head"><span class="bal-title">${l.level} balance</span></div>
-        <div class="bal-sub">This level is not in the takeoff, so there is no estimate to balance against. Poured so far: ${f1(l.actualVolume)} m\u00b3 &middot; ${money(l.actualCost)}.</div></div>`;
+      setBalance(`<div class="bal-card"><div class="bal-head"><span class="bal-title">${l.level} balance</span></div>
+        <div class="bal-sub">This level is not in the takeoff, so there is no estimate to balance against. Poured so far: ${f1(l.actualVolume)} m\u00b3 &middot; ${money(l.actualCost)}.</div></div>`);
       return;
     }
     const c1 = calc(l);
@@ -922,7 +1149,7 @@ function renderLevelBalance() {
         : (c.estimateVolume === 0 ? `<span style="color:var(--red)">${sgn(v)} (not in estimate)</span>` : `<span style="color:${colorOf(v)}">${sgn(v)}</span>`);
       return `<tr class="${notStarted ? 'notcounted' : ''}"><td>${c.category}</td><td>${f1(c.actualVolume)}</td><td>${c.estimateVolume > 0 ? f1(c.estimateVolume) : '\u2014'}</td><td>${varCell}</td></tr>`;
     }).join('');
-    el.innerHTML = `
+    setBalance(`
       <div class="bal-card">
         <div class="bal-head">
           <span class="bal-title">${l.level} balance across all categories${c1.done ? ' <span class="lvl-badge">\u2713 level complete</span>' : ''}</span>
@@ -936,7 +1163,7 @@ function renderLevelBalance() {
           <tbody>${rows}</tbody>
           <tfoot><tr><td>${c1.done ? 'Level total' : 'Counted total'}</td><td>${f1(c1.act)}</td><td>${f1(c1.est)}</td><td style="color:${colorOf(net)}">${sgn(net)}</td></tr></tfoot>
         </table>
-      </div>`;
+      </div>`);
     return;
   }
 
@@ -974,7 +1201,7 @@ function renderLevelBalance() {
     return `<tr><td>${name}</td><td>${f1(p.act)}</td><td>${f1(p.est)}</td><td style="color:${colorOf(v)}">${sgn(v)}</td></tr>`;
   }).join('') + unmapped.map(l => `<tr class="notcounted"><td>${l.level}</td><td>${f1(l.actualVolume)}</td><td>\u2014</td><td>not in takeoff</td></tr>`).join('');
 
-  el.innerHTML = `
+  setBalance(`
     <div class="bal-card">
       <div class="bal-head">
         <span class="bal-title">${title}${allDone ? ' <span class="lvl-badge">\u2713 all complete</span>' : ''}</span>
@@ -996,7 +1223,7 @@ function renderLevelBalance() {
         <thead><tr><th>Level</th><th>Poured m\u00b3</th><th>Estimate m\u00b3</th><th>Over / under</th></tr></thead>
         <tbody>${levelHtml}</tbody>
       </table>
-    </div>`;
+    </div>`);
 }
 
 function renderLevelPanel() {
