@@ -609,7 +609,10 @@ async function loadLevelStatus() {
   }
 }
 
+let _levelSaving = false;
 async function toggleLevelComplete(code) {
+  if (_levelSaving) return;          // ignore a second click while a save is in flight
+  _levelSaving = true;
   const msg = document.getElementById('level-msg');
   const makeComplete = !_levelStatus[code];
   msg.textContent = 'Saving...';
@@ -625,8 +628,10 @@ async function toggleLevelComplete(code) {
     msg.textContent = '';
   } catch (e) {
     msg.textContent = 'Could not save the change: ' + e.message;
+    _levelSaving = false;
     return;
   }
+  _levelSaving = false;
   renderLevelPanel();
   filterRows();
 }
