@@ -201,6 +201,10 @@
     margin: 0 0 8px;
     font-weight: 600;
   }
+  .sec-toggle { cursor: pointer; user-select: none; }
+  .sec-toggle:hover { color: var(--text-secondary); }
+  .sec-toggle:focus-visible { outline: 2px solid var(--text-muted); outline-offset: 2px; border-radius: 3px; }
+  .sec-chev { display: inline-block; width: 14px; font-size: 12px; }
   .card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -316,10 +320,14 @@
   </div>
 
   <div class="wrap">
+    <p class="section-label sec-toggle" id="sec-label-summary" role="button" tabindex="0" onclick="toggleSection('summary')"><span class="sec-chev" id="sec-chev-summary">\u25BE</span>Summary</p>
+    <div id="sec-body-summary">
     <div class="metrics" id="metrics"></div>
     <div class="metrics metrics-status" id="status-metrics"></div>
+    </div>
 
-    <p class="section-label">By level and category</p>
+    <p class="section-label sec-toggle" id="sec-label-bylevel" role="button" tabindex="0" onclick="toggleSection('bylevel')"><span class="sec-chev" id="sec-chev-bylevel">\u25BE</span>By level and category</p>
+    <div id="sec-body-bylevel">
     <div class="db-toolbar">
       <select class="db-select" id="sel-level" onchange="filterRows()">
         <option value="">Select level</option>
@@ -332,17 +340,22 @@
       </select>
     </div>
     <div class="db-grid" id="rows"><div class="empty">Select a level or type above to view data.</div></div>
+    </div>
 
-    <p class="section-label" style="margin-top:1.5rem;">Level completion <span style="text-transform:none;letter-spacing:0;font-weight:400;">&mdash; mark a level complete once its concrete is finished to compare its final volume and cost against the estimate</span></p>
+    <p class="section-label sec-toggle" id="sec-label-levels" role="button" tabindex="0" onclick="toggleSection('levels')" style="margin-top:1.5rem;"><span class="sec-chev" id="sec-chev-levels">\u25BE</span>Level completion <span style="text-transform:none;letter-spacing:0;font-weight:400;">&mdash; mark a level complete once its concrete is finished to compare its final volume and cost against the estimate</span></p>
+    <div id="sec-body-levels">
     <p id="level-msg" style="display:none;font-size:13px;color:var(--amber);background:#FAEEDA;border-radius:8px;padding:8px 12px;margin:0 0 8px;"></p>
     <div class="card">
       <div id="level-summary"></div>
       <div id="level-rows"><div class="empty">Click "Sync now" to load the latest data.</div></div>
     </div>
+    </div>
 
-    <p class="section-label" style="margin-top:1.5rem;">By precon estimate mix line <span style="text-transform:none;letter-spacing:0;font-weight:400;">&mdash; actual mixes ordered vs the takeoff's mix list; some precon lines are combined where one mix serves several</span> <span id="mix-scope" style="text-transform:none;letter-spacing:0;font-weight:500;"></span></p>
+    <p class="section-label sec-toggle" id="sec-label-mix" role="button" tabindex="0" onclick="toggleSection('mix')" style="margin-top:1.5rem;"><span class="sec-chev" id="sec-chev-mix">\u25BE</span>By precon estimate mix line <span style="text-transform:none;letter-spacing:0;font-weight:400;">&mdash; actual mixes ordered vs the takeoff's mix list; some precon lines are combined where one mix serves several</span> <span id="mix-scope" style="text-transform:none;letter-spacing:0;font-weight:500;"></span></p>
+    <div id="sec-body-mix">
     <div class="card">
       <div id="mix-rows"><div class="empty">Click "Sync now" to load the latest data.</div></div>
+    </div>
     </div>
 
     <footer>Category-level costs use a proxy rate (blended actual $/m3 per category) since there's no per-category precon budget yet. The whole-building total uses the real $2,726,165 precon concrete budget.</footer>
@@ -526,6 +539,41 @@ let _levelSource = 'server';   // 'server' = shared marks; 'device' = fallback k
 let _levelNote = '';           // visible explanation shown above the Level completion list
 let _levelBusy = null;         // level code currently being saved
 let _levelConfirm = null;      // level code waiting for "Yes, reopen" confirmation
+
+// ---- Collapsible sections (state is remembered in this browser) ----
+const SECTION_IDS = ['summary', 'bylevel', 'levels', 'mix'];
+const COLLAPSE_KEY = 'concretelog.collapsed.v1';
+function readCollapsed() {
+  try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+function setSectionVisible(id, visible) {
+  const body = document.getElementById('sec-body-' + id);
+  const chev = document.getElementById('sec-chev-' + id);
+  const label = document.getElementById('sec-label-' + id);
+  if (body) body.style.display = visible ? '' : 'none';
+  if (chev) chev.textContent = visible ? '\u25BE' : '\u25B8';
+  if (label && label.setAttribute) label.setAttribute('aria-expanded', visible ? 'true' : 'false');
+}
+function toggleSection(id) {
+  const state = readCollapsed();
+  const nowCollapsed = !state[id];
+  if (nowCollapsed) state[id] = true; else delete state[id];
+  try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  setSectionVisible(id, !nowCollapsed);
+  if (!nowCollapsed && typeof _charts === 'object') {          // charts drawn while hidden need a resize
+    Object.values(_charts).forEach(c => { if (c && typeof c.resize === 'function') c.resize(); });
+  }
+}
+function applySectionState() {
+  const state = readCollapsed();
+  SECTION_IDS.forEach(id => setSectionVisible(id, !state[id]));
+}
+function sectionKeys(e) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    const t = e.target && e.target.id;
+    if (t && t.indexOf('sec-label-') === 0) { e.preventDefault(); toggleSection(t.slice('sec-label-'.length)); }
+  }
+}
 
 function filterRows() {
   const lvl = document.getElementById('sel-level').value;
@@ -921,6 +969,9 @@ function renderMixComparison(mixRows) {
   }).join('');
   document.getElementById('mix-rows').innerHTML = html || '<div class="empty">No pours logged yet.</div>';
 }
+
+document.addEventListener && document.addEventListener('keydown', sectionKeys);
+applySectionState();
 
 sync();
 </script>
