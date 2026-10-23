@@ -251,6 +251,8 @@
   .lvl-btn { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; white-space: nowrap; }
   .lvl-btn:hover { border-color: var(--text-muted); }
   .lvl-btn:disabled { opacity: .55; cursor: default; }
+  .lvl-btn.danger { background: var(--red); border-color: var(--red); color: #fff; }
+  .lvl-confirm { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
   .lvl-btn.primary { background: var(--brand-red); border-color: var(--brand-red); color: #fff; }
   .lvl-detail { margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
   .lvl-detail .cat { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
@@ -523,6 +525,7 @@ let _levelStatus = {};      // { L1: { completedAt: ... } }  - marks saved on th
 let _levelSource = 'server';   // 'server' = shared marks; 'device' = fallback kept in this browser only
 let _levelNote = '';           // visible explanation shown above the Level completion list
 let _levelBusy = null;         // level code currently being saved
+let _levelConfirm = null;      // level code waiting for "Yes, reopen" confirmation
 
 function filterRows() {
   const lvl = document.getElementById('sel-level').value;
@@ -632,9 +635,41 @@ async function levelApi(method, body) {
   }
 }
 
+// The server's list of marks can lag behind a change you just made (Netlify's storage
+// is only eventually consistent), so changes made in this browser are remembered for a
+// few minutes and laid over whatever the server reports. That way a mark never
+// "reverts" just because the server hasn't caught up yet.
+const LVL_RECENT_KEY = 'concretelog.levelRecent.v1';
+const LVL_RECENT_MS = 5 * 60 * 1000;
+function readRecent() {
+  try { return JSON.parse(localStorage.getItem(LVL_RECENT_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+function writeRecent(o) {
+  try { localStorage.setItem(LVL_RECENT_KEY, JSON.stringify(o)); } catch (e) { /* ignore */ }
+}
+function rememberChange(code, complete, at) {
+  const r = readRecent();
+  r[code] = { complete, at };
+  writeRecent(r);
+}
+function applyRecentOverlay(server) {
+  const out = JSON.parse(JSON.stringify(server || {}));
+  const recent = readRecent();
+  const now = Date.now();
+  let touched = false;
+  for (const [code, r] of Object.entries(recent)) {
+    const age = now - new Date(r.at).getTime();
+    const serverAgrees = r.complete === !!out[code];
+    if (age > LVL_RECENT_MS || serverAgrees) { delete recent[code]; touched = true; continue; }
+    if (r.complete) out[code] = { completedAt: r.at }; else delete out[code];
+  }
+  if (touched) writeRecent(recent);
+  return out;
+}
+
 async function loadLevelStatus() {
   try {
-    _levelStatus = await levelApi('GET');
+    _levelStatus = applyRecentOverlay(await levelApi('GET'));
     _levelSource = 'server';
     _levelNote = '';
   } catch (e) {
@@ -644,19 +679,41 @@ async function loadLevelStatus() {
   }
 }
 
-async function toggleLevelComplete(code) {
+function askReopen(code) {
+  if (_levelBusy) return;
+  _levelConfirm = code;
+  renderLevelPanel();
+}
+function cancelReopen() {
+  _levelConfirm = null;
+  renderLevelPanel();
+}
+
+// confirmed = true only comes from the "Yes, reopen" button, so a level can never be
+// reopened by a single click.
+async function toggleLevelComplete(code, confirmed) {
   if (_levelBusy) return;             // ignore clicks while a save is in flight
-  const makeComplete = !_levelStatus[code];
+  const isComplete = !!_levelStatus[code];
+  if (isComplete && !confirmed) { askReopen(code); return; }
+  const makeComplete = !isComplete;
+  _levelConfirm = null;
+  const at = new Date().toISOString();
+  rememberChange(code, makeComplete, at);
   _levelBusy = code;
   renderLevelPanel();                 // button switches to "Saving..." straight away
   try {
-    _levelStatus = await levelApi('POST', { level: code, complete: makeComplete });
+    const serverState = await levelApi('POST', { level: code, complete: makeComplete });
+    // Apply only THIS change on top of what is already on screen. The server's full list can
+    // lag behind earlier clicks, so it is not used to replace the marks already shown.
+    const next = Object.assign({}, _levelStatus);
+    if (makeComplete) next[code] = (serverState[code] || { completedAt: at }); else delete next[code];
+    _levelStatus = next;
     _levelSource = 'server';
     _levelNote = '';
   } catch (e) {
     // Server save failed: keep the change on this device so the button still works, and say so.
-    const local = readLocalLevels();
-    if (makeComplete) local[code] = { completedAt: new Date().toISOString() }; else delete local[code];
+    const local = Object.assign(readLocalLevels(), _levelStatus);
+    if (makeComplete) local[code] = { completedAt: at }; else delete local[code];
     writeLocalLevels(local);
     _levelStatus = local;
     _levelSource = 'device';
@@ -731,11 +788,20 @@ function renderLevelPanel() {
         ${cats}
       </div>` + (l.pendingVolume > 0 ? `<div class="lvl-warn">\u26a0 Marked complete, but ${f1(l.pendingVolume)} m\u00b3 is logged on the Concrete Log without &ldquo;Completed by Site Team&rdquo; checked, so the final figures may still change.</div>` : '');
     }
+    const dis = _levelBusy ? 'disabled' : '';
+    let actionHtml;
+    if (!isDone) {
+      actionHtml = `<button class="lvl-btn primary" ${dis} onclick="toggleLevelComplete('${l.level}')">${_levelBusy === l.level ? 'Saving\u2026' : 'Mark complete'}</button>`;
+    } else if (_levelConfirm === l.level) {
+      actionHtml = `<span class="lvl-confirm">Reopen ${l.level}? <button class="lvl-btn danger" ${dis} onclick="toggleLevelComplete('${l.level}', true)">Yes, reopen</button> <button class="lvl-btn" ${dis} onclick="cancelReopen()">Cancel</button></span>`;
+    } else {
+      actionHtml = `<button class="lvl-btn" ${dis} onclick="askReopen('${l.level}')">${_levelBusy === l.level ? 'Saving\u2026' : 'Reopen'}</button>`;
+    }
     return `
       <div class="lvl-row${isDone ? ' done' : ''}">
         <div class="lvl-head">
           <span><span class="lvl-name">${l.level}</span>${chip}${status}${unmappedNote}</span>
-          <button class="lvl-btn${isDone ? '' : ' primary'}" ${_levelBusy ? 'disabled' : ''} onclick="toggleLevelComplete('${l.level}')">${_levelBusy === l.level ? 'Saving\u2026' : (isDone ? 'Reopen' : 'Mark complete')}</button>
+          ${actionHtml}
         </div>
         <div class="bar-track"><div class="bar-fill" style="width:${pct === null ? 0 : Math.min(pct, 100)}%;background:${barColor};"></div></div>
         <div class="row-bottom"><span>${f1(act)} of ${est > 0 ? f1(est) : '\u2014'} m\u00b3${pend}</span><span>${money(l.actualCost)}</span></div>
