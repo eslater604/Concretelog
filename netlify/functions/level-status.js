@@ -5,38 +5,58 @@ const { getStore, connectLambda } = require("@netlify/blobs");
 //   GET  -> { completed: { "L1": { completedAt: "..." }, ... } }
 //   POST { level: "L1", complete: true|false } -> the updated object
 //
-// Each level is its own key, so marking one level never rewrites another, and
-// the store uses strong consistency so a change is visible on the very next read
-// (Netlify Blobs is otherwise eventually consistent for up to ~60 seconds).
+// Netlify Blobs is eventually consistent: a NEW key can be read straight away,
+// but an overwrite or delete can show the old value for up to ~60 seconds. So
+// nothing here is ever overwritten or deleted. Every click appends a new event
+// ("L1 complete", "L1 reopened"), and a level's current state is simply its
+// most recent event. (Strong consistency is deliberately not used: it needs a
+// setting this kind of function is not given.)
 
 function json(statusCode, body) {
   return { statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
+function currentState(events) {
+  const latest = {};
+  for (const e of events) {
+    if (!e || !e.level || !e.at) continue;
+    if (!latest[e.level] || e.at > latest[e.level].at) latest[e.level] = e;
+  }
+  const completed = {};
+  for (const [level, e] of Object.entries(latest)) {
+    if (e.complete) completed[level] = { completedAt: e.at };
+  }
+  return { completed };
+}
+
 exports.handler = async function (event) {
   connectLambda(event);
   try {
-    const store = getStore({ name: "level-completion", consistency: "strong" });
-    const loadAll = async () => {
+    const store = getStore("level-events");
+    const loadEvents = async () => {
       const { blobs } = await store.list();
-      const completed = {};
-      await Promise.all(blobs.map(async (b) => {
+      const rows = await Promise.all(blobs.map(async (b) => {
         const v = await store.get(b.key, { type: "json" }).catch(() => null);
-        if (v) completed[b.key] = v;
+        return v ? { key: b.key, ...v } : null;
       }));
-      return { completed };
+      return rows.filter(Boolean);
     };
 
-    if (event.httpMethod === "GET") return json(200, await loadAll());
+    if (event.httpMethod === "GET") return json(200, currentState(await loadEvents()));
 
     if (event.httpMethod === "POST") {
       const { level, complete } = JSON.parse(event.body || "{}");
       if (typeof level !== "string" || !/^[A-Za-z0-9]{1,8}$/.test(level) || typeof complete !== "boolean") {
         return json(400, { error: "Need a level code (e.g. L1) and complete: true or false" });
       }
-      if (complete) await store.setJSON(level, { completedAt: new Date().toISOString() });
-      else await store.delete(level);
-      return json(200, await loadAll());
+      const at = new Date().toISOString();
+      const key = level + "__" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+      const newEvent = { level, complete, at };
+      await store.setJSON(key, newEvent);
+      // Include the event just written even if the listing hasn't caught up yet.
+      const events = await loadEvents();
+      if (!events.some((e) => e.key === key)) events.push({ key, ...newEvent });
+      return json(200, currentState(events));
     }
 
     return { statusCode: 405, body: "Method not allowed" };
