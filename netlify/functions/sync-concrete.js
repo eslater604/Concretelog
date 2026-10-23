@@ -1,4 +1,19 @@
-const { ESTIMATE, LOCATION_MAP, WHOLE_BUILDING_BUDGET } = require("./estimate-data");
+const { ESTIMATE: ESTIMATE_RAW, LOCATION_MAP, WHOLE_BUILDING_BUDGET } = require("./estimate-data");
+
+// The Concrete Log's Level list has no "P1a", so P1a is treated as part of P1
+// everywhere: its estimate is added onto P1 here, and any P1a / P1A pour in the
+// log is counted as P1 (see canonLevel below). estimate-data.js itself is untouched.
+const ESTIMATE = (() => {
+  const merged = JSON.parse(JSON.stringify(ESTIMATE_RAW));
+  if (merged["P1a"]) {
+    merged["P1"] = merged["P1"] || {};
+    for (const [cat, v] of Object.entries(merged["P1a"])) {
+      merged["P1"][cat] = Math.round(((merged["P1"][cat] || 0) + v) * 10) / 10;
+    }
+    delete merged["P1a"];
+  }
+  return merged;
+})();
 const { PRECON_GROUPS, TRM_TO_GROUP, LOCATION_TO_GROUPS } = require("./precon-crosswalk");
 
 // Location decides the bucket; mix refines within it; LPM always flags.
@@ -12,13 +27,13 @@ function resolveGroup(location, mixCode) {
 }
 
 // The Concrete Log records levels as "L1".."L29", "P1".."P4" and "Roof", but
-// ESTIMATE (from the takeoff) is keyed "1".."29", "P2", "P1", "P1a", "Roof".
+// ESTIMATE (from the takeoff) is keyed "1".."29", "P2", "P1" (with P1a folded in), "Roof".
 // Normalise the log's code to the estimate's key before looking it up.
 function canonLevel(level) {
   const s = String(level).trim();
   let m;
   if ((m = /^L\s*(\d+)$/i.exec(s))) return "L" + parseInt(m[1], 10);
-  if ((m = /^P\s*(\d+)(a)?$/i.exec(s))) return "P" + m[1] + (m[2] ? "a" : "");   // "P1A" and "P1a" are the same level
+  if ((m = /^P\s*(\d+)a?$/i.exec(s))) return "P" + m[1];   // "P1a" / "P1A" are counted as P1
   if (/^roof$/i.test(s)) return "Roof";
   return s;
 }
@@ -29,7 +44,7 @@ function levelKey(level) {
 }
 // Estimate key back to the log's level code ("1" -> "L1"), and building order.
 function keyToCode(k) { return /^\d+$/.test(k) ? "L" + k : k; }
-const BUILDING_ORDER = ["P5", "P4", "P3", "P2", "P1", "P1a"]
+const BUILDING_ORDER = ["P5", "P4", "P3", "P2", "P1"]
   .concat(Array.from({ length: 35 }, (_, i) => "L" + (i + 1)), ["Roof"]);
 // Levels that exist in the takeoff but carry no concrete: a pour here really is
 // unbudgeted ("no estimate"), as opposed to a level the estimate doesn't cover.
