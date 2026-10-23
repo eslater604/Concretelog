@@ -11,6 +11,30 @@ function resolveGroup(location, mixCode) {
   return allowed[0];
 }
 
+// The Concrete Log records levels as "L1".."L29", "P1".."P4" and "Roof", but
+// ESTIMATE (from the takeoff) is keyed "1".."29", "P2", "P1", "P1a", "Roof".
+// Normalise the log's code to the estimate's key before looking it up.
+function canonLevel(level) {
+  const s = String(level).trim();
+  let m;
+  if ((m = /^L\s*(\d+)$/i.exec(s))) return "L" + parseInt(m[1], 10);
+  if ((m = /^P\s*(\d+)(a)?$/i.exec(s))) return "P" + m[1] + (m[2] ? "a" : "");   // "P1A" and "P1a" are the same level
+  if (/^roof$/i.test(s)) return "Roof";
+  return s;
+}
+function levelKey(level) {
+  const c = canonLevel(level);
+  const m = /^L(\d+)$/.exec(c);
+  return m ? m[1] : c;
+}
+// Estimate key back to the log's level code ("1" -> "L1"), and building order.
+function keyToCode(k) { return /^\d+$/.test(k) ? "L" + k : k; }
+const BUILDING_ORDER = ["P5", "P4", "P3", "P2", "P1", "P1a"]
+  .concat(Array.from({ length: 35 }, (_, i) => "L" + (i + 1)), ["Roof"]);
+// Levels that exist in the takeoff but carry no concrete: a pour here really is
+// unbudgeted ("no estimate"), as opposed to a level the estimate doesn't cover.
+const ZERO_ESTIMATE_LEVELS = new Set(["P5", "P4", "P3"]);
+
 const SHEET_ID = "1726632799719300"; // 665 - 701 Kingsway - Concrete Log
 
 // Column titles we need, matched by title rather than index since Smartsheet
@@ -54,11 +78,14 @@ exports.handler = async function (event) {
 
     // Flatten every row's Mix #1 / #2 / #3 into individual pours
     const pours = [];
+    // Pours on rows NOT yet marked "Completed by Site Team". They never count
+    // toward actuals - only reported separately as "logged, not yet complete".
+    const pendingPours = [];
     for (const row of sheet.rows) {
       const cells = cellByColId(row);
-      // Only count pours confirmed by the site team - unchecked rows are
-      // future/tentative pours that may still change.
-      if (cells[colIdByTitle["Completed by Site Team"]] !== true) continue;
+      // Only pours confirmed by the site team count as actuals - unchecked rows
+      // are future/tentative pours that may still change (kept as pending).
+      const completed = cells[colIdByTitle["Completed by Site Team"]] === true;
       const mixes = [
         ["Unit Price ($/m3)", "Volume (m3)", "Level", "Location Used", "Mix #1 Concrete Price", "Mix #1 Ordered", ["M#1-Add #1 Unit Price", "M#1-Add #2 Unit Price", "M#1-Add #3 Unit Price", "M#1-Add #4 Unit Price"]],
         ["(Mix #2) Unit Price ($/m3)", "(Mix #2) Volume (m3)", "(Mix #2) Level", "(Mix #2) Location Used", "Mix #2 Concrete Price", "(Mix #2) Ordered", ["M#2-Add #1 Unit Price", "M#2-Add #2 Unit Price", "M#2-Add #3 Unit Price", "M#2-Add #4 Unit Price"]],
@@ -76,9 +103,9 @@ exports.handler = async function (event) {
         // Admixture charges logged against this mix slot (superplasticizer,
         // PRA, delayset, winter handling, etc.)
         const additives = addKeys.reduce((s, k) => s + num(cells[colIdByTitle[k]]), 0);
-        pours.push({
+        (completed ? pours : pendingPours).push({
           volume: vol,
-          level: String(level),
+          level: canonLevel(level),
           location: String(location),
           rate: num(cells[colIdByTitle[rateKey]]),
           price: num(cells[colIdByTitle[priceKey]]),
@@ -99,6 +126,21 @@ exports.handler = async function (event) {
       if (p.mixCode) agg[key].mixes[p.mixCode] = true;
     }
 
+    // Pending (not yet completed) volume and cost by level + category. A combo
+    // with only pending pours still gets a row, flagged pendingOnly so it stays
+    // out of the totals and the on-track / near / over counts.
+    const pendAgg = {};
+    for (const p of pendingPours) {
+      const category = LOCATION_MAP[p.location] || "Unmapped - review";
+      const key = p.level + "||" + category;
+      if (!pendAgg[key]) pendAgg[key] = { level: p.level, category, volume: 0, cost: 0 };
+      pendAgg[key].volume += p.volume;
+      pendAgg[key].cost += (p.price || p.volume * p.rate) + p.additives;
+    }
+    for (const [key, pa] of Object.entries(pendAgg)) {
+      if (!agg[key]) agg[key] = { level: pa.level, category: pa.category, actualVolume: 0, actualCost: 0, mixes: {}, pendingOnly: true };
+    }
+
     // Blended actual $/m3 rate per category, pooled across all levels -
     // used as the proxy budget rate since no precon $ budget exists yet.
     const rateByCategory = {};
@@ -109,21 +151,75 @@ exports.handler = async function (event) {
     }
 
     const rows = Object.values(agg).map((r) => {
-      const estVol = (ESTIMATE[r.level] && ESTIMATE[r.level][r.category]) || 0;
+      const lvlEst = ESTIMATE[levelKey(r.level)];
+      const estimateMapped = !!lvlEst || ZERO_ESTIMATE_LEVELS.has(levelKey(r.level));
+      const estVol = (lvlEst && lvlEst[r.category]) || 0;
       const rateInfo = rateByCategory[r.category];
       const rate = rateInfo && rateInfo.vol > 0 ? rateInfo.cost / rateInfo.vol : 0;
       const estCost = r.category === "Unmapped - review" ? 0 : estVol * rate;
       return {
         level: r.level,
         category: r.category,
+        estimateMapped,
+        pendingOnly: !!r.pendingOnly,
+        pendingVolume: round((pendAgg[r.level + "||" + r.category] || {}).volume || 0),
+        pendingCost: round((pendAgg[r.level + "||" + r.category] || {}).cost || 0),
         estimateVolume: round(estVol),
         actualVolume: round(r.actualVolume),
         estimateCost: round(estCost),
         actualCost: round(r.actualCost),
-        pctUsed: estVol > 0 ? Math.round((r.actualVolume / estVol) * 1000) / 10 : null,
+        pctUsed: (estVol > 0 && !r.pendingOnly) ? Math.round((r.actualVolume / estVol) * 1000) / 10 : null,
         mixesUsed: Object.keys(r.mixes).sort()
       };
     }).sort((a, b) => (b.pctUsed ?? -1) - (a.pctUsed ?? -1));
+
+    // ---- Per-level summary for the Level completion panel ----
+    // Estimate side comes from the whole takeoff (so budgeted categories that were
+    // never poured show as under); actual side is completed pours only.
+    const rateFor = (cat) => {
+      const ri = rateByCategory[cat];
+      return ri && ri.vol > 0 ? ri.cost / ri.vol : 0;
+    };
+    const levelMap = {};
+    const levelEntry = (code) => levelMap[code] || (levelMap[code] = {
+      level: code, estimateMapped: !!ESTIMATE[levelKey(code)] || ZERO_ESTIMATE_LEVELS.has(levelKey(code)),
+      cats: {}, pendingVolume: 0
+    });
+    const catEntry = (e, cat) => e.cats[cat] || (e.cats[cat] = { category: cat, estimateVolume: 0, actualVolume: 0, actualCost: 0 });
+    for (const [k, cats] of Object.entries(ESTIMATE)) {
+      const e = levelEntry(keyToCode(k));
+      for (const [cat, v] of Object.entries(cats)) if (v > 0) catEntry(e, cat).estimateVolume = v;
+    }
+    for (const a of Object.values(agg)) {
+      if (a.pendingOnly) continue;
+      const c = catEntry(levelEntry(a.level), a.category);
+      c.actualVolume += a.actualVolume;
+      c.actualCost += a.actualCost;
+    }
+    for (const pa of Object.values(pendAgg)) levelEntry(pa.level).pendingVolume += pa.volume;
+    const levels = Object.values(levelMap).map((e) => {
+      const cats = Object.values(e.cats).map((c) => ({
+        category: c.category,
+        estimateVolume: round(c.estimateVolume),
+        actualVolume: round(c.actualVolume),
+        actualCost: round(c.actualCost),
+        estimateCost: c.category === "Unmapped - review" ? 0 : round(c.estimateVolume * rateFor(c.category))
+      })).sort((x, y) => Math.max(y.estimateVolume, y.actualVolume) - Math.max(x.estimateVolume, x.actualVolume));
+      return {
+        level: e.level,
+        estimateMapped: e.estimateMapped,
+        estimateVolume: round(cats.reduce((t, c) => t + c.estimateVolume, 0)),
+        actualVolume: round(cats.reduce((t, c) => t + c.actualVolume, 0)),
+        estimateCost: round(cats.reduce((t, c) => t + c.estimateCost, 0)),
+        actualCost: round(cats.reduce((t, c) => t + c.actualCost, 0)),
+        pendingVolume: round(e.pendingVolume),
+        categories: cats
+      };
+    }).filter(l => l.estimateVolume > 0 || l.actualVolume > 0 || l.pendingVolume > 0)
+      .sort((a, b) => {
+        const ia = BUILDING_ORDER.indexOf(a.level), ib = BUILDING_ORDER.indexOf(b.level);
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+      });
 
     const wholeBuildingEstimate = Object.values(ESTIMATE).reduce(
       (sum, cats) => sum + Object.values(cats).reduce((s, v) => s + v, 0), 0
@@ -131,7 +227,8 @@ exports.handler = async function (event) {
     const wholeBuildingActual = pours.reduce((s, p) => s + p.volume, 0);
     const wholeBuildingActualCost = pours.reduce((s, p) => s + (p.price || p.volume * p.rate) + p.additives, 0);
     const wholeBuildingEstimateCost = WHOLE_BUILDING_BUDGET;
-    const activeRows = rows.filter(r => r.category !== "Unmapped - review");
+    const countedRows = rows.filter(r => !r.pendingOnly);
+    const activeRows = countedRows.filter(r => r.category !== "Unmapped - review");
 
     // ---- Mix-level comparison: actual pours grouped by precon mix line ----
     const mixAgg = {};
@@ -145,6 +242,7 @@ exports.handler = async function (event) {
     const mixComparison = Object.entries(mixAgg).map(([key, agg2]) => {
       const g = PRECON_GROUPS[key] || { label: "Unrecognized mix code - review", preconLines: "none", volume: 0, flag: "review" };
       return {
+        groupKey: key,
         group: g.label,
         preconLines: g.preconLines,
         preconVolume: round(g.volume),
@@ -237,6 +335,7 @@ exports.handler = async function (event) {
     return respond(200, {
       updatedAt: new Date().toISOString(),
       rows,
+      levels,
       mixComparison,
       pos,
       pours: pours.map(p => ({
@@ -246,12 +345,15 @@ exports.handler = async function (event) {
         volume: round(p.volume),
         cost: round((p.price || p.volume * p.rate) + p.additives),
         mix: p.mixCode,
+        group: resolveGroup(p.location, p.mixCode),
       })),
       totals: {
-        activeEstimate: round(rows.reduce((s, r) => s + r.estimateVolume, 0)),
+        activeEstimate: round(countedRows.reduce((s, r) => s + r.estimateVolume, 0)),
         activeActual: round(activeRows.reduce((s, r) => s + r.actualVolume, 0)),
         activeEstimateCost: round(activeRows.reduce((s, r) => s + r.estimateCost, 0)),
-        activeActualCost: round(rows.reduce((s, r) => s + r.actualCost, 0)),
+        activeActualCost: round(countedRows.reduce((s, r) => s + r.actualCost, 0)),
+        pendingVolume: round(pendingPours.reduce((s, p) => s + p.volume, 0)),
+        pendingCost: round(pendingPours.reduce((s, p) => s + (p.price || p.volume * p.rate) + p.additives, 0)),
         wholeBuildingEstimate: round(wholeBuildingEstimate),
         wholeBuildingActual: round(wholeBuildingActual),
         wholeBuildingEstimateCost: round(wholeBuildingEstimateCost),
