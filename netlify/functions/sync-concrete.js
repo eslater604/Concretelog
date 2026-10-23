@@ -2,7 +2,8 @@ const { ESTIMATE: ESTIMATE_RAW, LOCATION_MAP, WHOLE_BUILDING_BUDGET } = require(
 
 // The Concrete Log's Level list has no "P1a", so P1a is treated as part of P1
 // everywhere: its estimate is added onto P1 here, and any P1a / P1A pour in the
-// log is counted as P1 (see canonLevel below). estimate-data.js itself is untouched.
+// log is counted as P1 (see canonLevel below). Steps and Toppings are folded into
+// Suspended slab (flatwork). estimate-data.js itself is untouched.
 const ESTIMATE = (() => {
   const merged = JSON.parse(JSON.stringify(ESTIMATE_RAW));
   if (merged["P1a"]) {
@@ -11,6 +12,16 @@ const ESTIMATE = (() => {
       merged["P1"][cat] = Math.round(((merged["P1"][cat] || 0) + v) * 10) / 10;
     }
     delete merged["P1a"];
+  }
+  // Flatwork on a suspended level is logged as one thing (Suspended Slab). The takeoff's Steps and
+  // Toppings columns are flatwork poured with the slab, so they are added into the Suspended slab
+  // estimate for each level (e.g. Level 1: 573.4 slab + 178.5 steps = 751.9). Slabs on grade stay
+  // separate because the log has its own Slab On Grade location.
+  for (const cats of Object.values(merged)) {
+    const fold = (cats["Steps"] || 0) + (cats["Toppings"] || 0);
+    if (fold) cats["Suspended slab"] = Math.round(((cats["Suspended slab"] || 0) + fold) * 10) / 10;
+    cats["Steps"] = 0;
+    cats["Toppings"] = 0;
   }
   return merged;
 })();
