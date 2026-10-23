@@ -3,7 +3,8 @@ const { ESTIMATE: ESTIMATE_RAW, LOCATION_MAP, WHOLE_BUILDING_BUDGET } = require(
 // The Concrete Log's Level list has no "P1a", so P1a is treated as part of P1
 // everywhere: its estimate is added onto P1 here, and any P1a / P1A pour in the
 // log is counted as P1 (see canonLevel below). Steps and Toppings are folded into
-// Suspended slab (flatwork). estimate-data.js itself is untouched.
+// Suspended slab (flatwork), and Stairs & landings, Housekeeping pads and Pedestals are added to the
+// level's slab volume. estimate-data.js itself is untouched.
 const ESTIMATE = (() => {
   const merged = JSON.parse(JSON.stringify(ESTIMATE_RAW));
   if (merged["P1a"]) {
@@ -22,6 +23,19 @@ const ESTIMATE = (() => {
     if (fold) cats["Suspended slab"] = Math.round(((cats["Suspended slab"] || 0) + fold) * 10) / 10;
     cats["Steps"] = 0;
     cats["Toppings"] = 0;
+  }
+  // Stairs & landings, Housekeeping pads and Pedestals have no Concrete Log location of their own,
+  // so their volume is added to the level's slab volume: Suspended slab, or Slabs on grade on a
+  // level with no suspended slab (P2). Upstands & curbs stay separate (the log has a location for them).
+  for (const cats of Object.values(merged)) {
+    const extra = (cats["Stairs & landings"] || 0) + (cats["Housekeeping pads"] || 0) + (cats["Pedestals"] || 0);
+    if (extra) {
+      const target = (cats["Suspended slab"] || 0) > 0 ? "Suspended slab" : "Slabs on grade";
+      cats[target] = Math.round(((cats[target] || 0) + extra) * 10) / 10;
+    }
+    cats["Stairs & landings"] = 0;
+    cats["Housekeeping pads"] = 0;
+    cats["Pedestals"] = 0;
   }
   return merged;
 })();
