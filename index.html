@@ -175,7 +175,7 @@
     gap: 12px;
     margin-bottom: 12px;
   }
-  .metrics-status { margin-bottom: 1.5rem; }
+  #sec-body-summary .metrics { margin-bottom: 1.5rem; }
   .metric-card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -222,6 +222,15 @@
     font-size: 15px; line-height: 1;
   }
   .sec-toggle.collapsed .sec-chev { background: #fff; color: var(--brand-red); }
+  .ms { position: relative; display: inline-block; }
+  .ms-btn { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 150px; font-family: inherit; text-align: left; }
+  .ms-menu { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 210px; max-height: 340px; overflow: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.14); padding: 6px; }
+  .ms-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .ms-item:hover { background: #F4F3EE; }
+  .ms-item input { margin: 0; cursor: pointer; }
+  .ms-all { font-weight: 600; border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0; margin-bottom: 4px; }
+  .ms-foot { display: flex; justify-content: space-between; gap: 8px; padding: 8px 4px 2px; margin-top: 4px; border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--card); }
+  .bal-sec { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 0; }
   .bal-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
   .bal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .bal-title { font-weight: 600; font-size: 15px; }
@@ -351,15 +360,15 @@
     <p class="section-label sec-toggle" id="sec-label-summary" role="button" tabindex="0" onclick="toggleSection('summary')"><span class="sec-title">Summary</span><span class="sec-action"><span id="sec-hint-summary">Hide</span><span class="sec-chev" id="sec-chev-summary">&#9662;</span></span></p>
     <div id="sec-body-summary">
     <div class="metrics" id="metrics"></div>
-    <div class="metrics metrics-status" id="status-metrics"></div>
     </div>
 
     <p class="section-label sec-toggle" id="sec-label-bylevel" role="button" tabindex="0" onclick="toggleSection('bylevel')"><span class="sec-title">By level and category</span><span class="sec-action"><span id="sec-hint-bylevel">Hide</span><span class="sec-chev" id="sec-chev-bylevel">&#9662;</span></span></p>
     <div id="sec-body-bylevel">
     <div class="db-toolbar">
-      <select class="db-select" id="sel-level" onchange="filterRows()">
-        <option value="">Select level</option>
-      </select>
+      <div class="ms" id="ms-level">
+        <button type="button" class="db-select ms-btn" id="sel-level-btn" onclick="toggleLevelMenu(event)"><span id="sel-level-label">Select level</span><span>&#9662;</span></button>
+        <div class="ms-menu" id="sel-level-menu" style="display:none;"></div>
+      </div>
       <select class="db-select" id="sel-cat" onchange="filterRows()">
         <option value="">Select type</option>
       </select>
@@ -485,10 +494,6 @@ async function sync() {
 
 function render(data) {
   const { rows, totals } = data;
-  const scored = rows.filter(r => r.pctUsed !== null);
-  const onTrack = scored.filter(r => r.pctUsed < 85).length;
-  const near = scored.filter(r => r.pctUsed >= 85 && r.pctUsed <= 100).length;
-  const over = scored.filter(r => r.pctUsed > 100).length;
 
   document.getElementById('metrics').innerHTML = `
     <div class="metric-card">
@@ -510,21 +515,6 @@ function render(data) {
     <div class="metric-card">
       <p class="metric-label">Logged, not yet complete</p>
       <p class="metric-value">${(totals.pendingVolume || 0).toLocaleString()} <span style="font-size:14px;font-weight:400;color:var(--text-secondary);">m3 &middot; $${Math.round((totals.pendingCost || 0) / 1000).toLocaleString()}k</span></p>
-    </div>
-  `;
-
-  document.getElementById('status-metrics').innerHTML = `
-    <div class="metric-card success">
-      <p class="metric-label">On track</p>
-      <p class="metric-value">${onTrack} categor${onTrack === 1 ? 'y' : 'ies'}</p>
-    </div>
-    <div class="metric-card warning">
-      <p class="metric-label">Near estimate</p>
-      <p class="metric-value">${near} categor${near === 1 ? 'y' : 'ies'}</p>
-    </div>
-    <div class="metric-card danger">
-      <p class="metric-label">Needs attention</p>
-      <p class="metric-value">${over} categor${over === 1 ? 'y' : 'ies'}</p>
     </div>
   `;
 
@@ -601,18 +591,86 @@ function applySectionState() {
   SECTION_IDS.forEach(id => setSectionVisible(id, !state[id]));
 }
 function sectionKeys(e) {
+  if (e.key === 'Escape') closeLevelMenu();
   if (e.key === 'Enter' || e.key === ' ') {
     const t = e.target && e.target.id;
     if (t && t.indexOf('sec-label-') === 0) { e.preventDefault(); toggleSection(t.slice('sec-label-'.length)); }
   }
 }
 
+// ---- Level multi-select (checkbox dropdown) ----
+const LEVEL_ORDER = ['P5', 'P4', 'P3', 'P2', 'P1'].concat(Array.from({ length: 35 }, (_, i) => 'L' + (i + 1)), ['Roof']);
+let _selLevels = [];
+function allLevelCodes() {
+  const set = new Set(_levels.map(l => l.level).concat(_allRows.map(r => r.level)));
+  return [...set].sort((a, b) => {
+    const ia = LEVEL_ORDER.indexOf(a), ib = LEVEL_ORDER.indexOf(b);
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b);
+  });
+}
+// none = nothing ticked; isAll = every level ticked (same as "All levels").
+function levelSelection() {
+  const all = allLevelCodes();
+  const codes = all.filter(c => _selLevels.includes(c));   // keeps building order
+  return { codes, none: codes.length === 0, isAll: all.length > 0 && codes.length === all.length };
+}
+function levelLabel(codes) { return codes.length <= 4 ? codes.join(', ') : codes.length + ' levels'; }
+function updateLevelButton() {
+  const el = document.getElementById('sel-level-label');
+  if (!el) return;
+  const ls = levelSelection();
+  el.textContent = ls.none ? 'Select level' : (ls.isAll ? 'All levels' : levelLabel(ls.codes));
+}
+function renderLevelMenu() {
+  const menu = document.getElementById('sel-level-menu');
+  if (!menu) return;
+  const ls = levelSelection();
+  menu.innerHTML =
+    `<label class="ms-item ms-all"><input type="checkbox" ${ls.isAll ? 'checked' : ''} onchange="toggleAllLevels(this.checked)"> All levels</label>` +
+    allLevelCodes().map(c => `<label class="ms-item"><input type="checkbox" data-code="${c}" ${ls.codes.includes(c) ? 'checked' : ''} onchange="toggleLevel('${c}', this.checked)"> ${c}${_levelStatus[c] ? ' <span class="lvl-badge">\u2713 complete</span>' : ''}</label>`).join('') +
+    `<div class="ms-foot"><button type="button" class="lvl-btn" onclick="clearLevels()">Clear</button><button type="button" class="lvl-btn primary" onclick="closeLevelMenu()">Done</button></div>`;
+}
+function syncMenuChecks() {
+  const menu = document.getElementById('sel-level-menu');
+  if (!menu || !menu.querySelectorAll) return;
+  const ls = levelSelection();
+  menu.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.checked = cb.getAttribute('data-code') ? ls.codes.includes(cb.getAttribute('data-code')) : ls.isAll;
+  });
+}
+function levelSelectionChanged() { updateLevelButton(); filterRows(); }
+function toggleLevel(code, on) {
+  const set = new Set(_selLevels);
+  if (on) set.add(code); else set.delete(code);
+  _selLevels = [...set];
+  syncMenuChecks();
+  levelSelectionChanged();
+}
+function toggleAllLevels(on) {
+  _selLevels = on ? allLevelCodes() : [];
+  syncMenuChecks();
+  levelSelectionChanged();
+}
+function clearLevels() { toggleAllLevels(false); }
+function toggleLevelMenu(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  const m = document.getElementById('sel-level-menu');
+  if (!m) return;
+  const opening = m.style.display !== 'block';
+  if (opening) renderLevelMenu();
+  m.style.display = opening ? 'block' : 'none';
+}
+function closeLevelMenu() {
+  const m = document.getElementById('sel-level-menu');
+  if (m) m.style.display = 'none';
+}
+
 function filterRows() {
-  const lvl = document.getElementById('sel-level').value;
+  const ls = levelSelection();
   const cat = document.getElementById('sel-cat').value;
   const mix = document.getElementById('sel-mix').value;
   const filtered = _allRows.filter(r =>
-    (!lvl || lvl === 'ALL' || r.level === lvl) &&
+    (ls.none || ls.isAll || ls.codes.includes(r.level)) &&
     (!cat || cat === 'ALL' || r.category === cat) &&
     (!mix || mix === 'ALL' || (r.mixesUsed || []).includes(mix))
   );
@@ -622,24 +680,22 @@ function filterRows() {
 }
 
 function populateFilters(rows) {
-  const levels = [...new Set(rows.map(r => r.level))];
   const cats = [...new Set(rows.map(r => r.category))];
   const mixes = [...new Set(rows.flatMap(r => r.mixesUsed || []))].sort();
-  const selLvl = document.getElementById('sel-level');
   const selCat = document.getElementById('sel-cat');
   const selMix = document.getElementById('sel-mix');
-  const curLvl = selLvl.value; const curCat = selCat.value; const curMix = selMix.value;
-  selLvl.innerHTML = '<option value="">Select level</option><option value="ALL">All levels</option>' + levels.map(l => `<option${l===curLvl?' selected':''}>${l}</option>`).join('');
+  const curCat = selCat.value; const curMix = selMix.value;
   selCat.innerHTML = '<option value="">Select type</option><option value="ALL">All types</option>' + cats.map(c => `<option${c===curCat?' selected':''}>${c}</option>`).join('');
   selMix.innerHTML = '<option value="">Select mix</option><option value="ALL">All mixes</option>' + mixes.map(m => `<option${m===curMix?' selected':''}>${m}</option>`).join('');
+  renderLevelMenu();
+  updateLevelButton();
 }
 
 function renderDonutGrid(rows) {
   const grid = document.getElementById('rows');
-  const lvl = document.getElementById('sel-level').value;
   const cat = document.getElementById('sel-cat').value;
   const mix = document.getElementById('sel-mix').value;
-  if (!lvl && !cat && !mix) {
+  if (levelSelection().none && !cat && !mix) {
     grid.innerHTML = '<div class="empty">Select a level or type above to view data.</div>';
     return;
   }
@@ -805,75 +861,140 @@ async function toggleLevelComplete(code, confirmed) {
   filterRows();
 }
 
-// "Level balance" tile: shown when a level is picked in the dropdown. Adds up every
-// category on that level against its estimate, so over in one category and under in
-// another net out to one over/under figure.
+// "Level balance" tile: shown when one or more levels are ticked in the level dropdown.
+// Adds up every category on the selected level(s) against its estimate, so over in one
+// category and under in another net out to one over/under figure.
 function renderLevelBalance() {
   const el = document.getElementById('level-balance');
   if (!el) return;
-  const lvl = document.getElementById('sel-level').value;
-  if (!lvl || lvl === 'ALL') { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const ls = levelSelection();
+  if (ls.none) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = '';
-  const l = _levels.find(x => x.level === lvl);
-  if (!l) { el.innerHTML = `<div class="bal-card"><span class="bal-title">${lvl} balance</span><div class="bal-sub">No data for this level yet.</div></div>`; return; }
 
   const f1 = n => n.toLocaleString(undefined, { maximumFractionDigits: 1 });
   const money = n => '$' + Math.round(Math.abs(n)).toLocaleString();
   const sgn = n => (n > 0.05 ? '+' + f1(n) : (n < -0.05 ? '\u2212' + f1(-n) : '0'));
   const colorOf = n => n > 0.05 ? 'var(--red)' : (n < -0.05 ? 'var(--green)' : 'var(--text-secondary)');
-  const done = !!_levelStatus[l.level];
-  const cats = l.categories.filter(c => c.estimateVolume > 0 || c.actualVolume > 0);
-  // Counted in the balance: every category once the level is complete; otherwise only
-  // categories that have started (an unpoured category is not "under", it is just not done yet).
-  const counted = c => done || c.actualVolume > 0;
   const sum = (arr, k) => arr.reduce((t, c) => t + c[k], 0);
-  const inBal = cats.filter(counted);
-  const act = sum(inBal, 'actualVolume'), est = sum(inBal, 'estimateVolume');
-  const actC = sum(inBal, 'actualCost'), estC = sum(inBal, 'estimateCost');
-  const net = act - est;
-  const netC = actC - estC;
+  const pctOf = (n, base) => base > 0 ? ' (' + (n > 0 ? '+' : (n < 0 ? '\u2212' : '')) + Math.abs(n / base * 100).toFixed(1) + '%)' : '';
+  // Counted in the balance: every category once a level is complete; otherwise only
+  // categories that have started (an unpoured category is not "under", just not done yet).
+  const calc = (l) => {
+    const done = !!_levelStatus[l.level];
+    const cats = l.categories.filter(c => c.estimateVolume > 0 || c.actualVolume > 0);
+    const inBal = cats.filter(c => done || c.actualVolume > 0);
+    return { l, done, cats, inBal,
+      act: sum(inBal, 'actualVolume'), est: sum(inBal, 'estimateVolume'),
+      actC: sum(inBal, 'actualCost'), estC: sum(inBal, 'estimateCost') };
+  };
+  const costText = (actC, estC) => { const d = actC - estC; return `Cost: <strong>${money(actC)}</strong> vs ${money(estC)} estimated (<span style="color:${colorOf(d)}">${Math.abs(d) < 0.5 ? 'on estimate' : money(d) + (d > 0 ? ' over' : ' under')}</span>)`; };
+  const whereText = (rows, actK, estK, nameK) => {
+    const diff = r => r[actK] - r[estK];
+    const overs = rows.filter(r => diff(r) > 0.05).sort((a, b) => diff(b) - diff(a));
+    const unders = rows.filter(r => diff(r) < -0.05).sort((a, b) => diff(a) - diff(b));
+    const list = arr => arr.map(r => `${r[nameK]} (${sgn(diff(r))})`).join(', ');
+    return (overs.length || unders.length)
+      ? `${overs.length ? 'Over in: <strong style="color:var(--red)">' + list(overs) + '</strong>. ' : ''}${unders.length ? 'Under in: <strong style="color:var(--green)">' + list(unders) + '</strong>.' : ''}`
+      : 'Every category counted is right on its estimate.';
+  };
 
-  if (!l.estimateMapped) {
-    el.innerHTML = `<div class="bal-card"><div class="bal-head"><span class="bal-title">${l.level} balance</span></div>
-      <div class="bal-sub">This level is not in the takeoff, so there is no estimate to balance against. Poured so far: ${f1(l.actualVolume)} m\u00b3 &middot; ${money(l.actualCost)}.</div></div>`;
+  const items = ls.codes.map(code => ({ code, l: _levels.find(x => x.level === code) }));
+
+  // ---------------- one level ----------------
+  if (items.length === 1) {
+    const { code, l } = items[0];
+    if (!l) { el.innerHTML = `<div class="bal-card"><span class="bal-title">${code} balance</span><div class="bal-sub">No data for this level yet.</div></div>`; return; }
+    if (!l.estimateMapped) {
+      el.innerHTML = `<div class="bal-card"><div class="bal-head"><span class="bal-title">${l.level} balance</span></div>
+        <div class="bal-sub">This level is not in the takeoff, so there is no estimate to balance against. Poured so far: ${f1(l.actualVolume)} m\u00b3 &middot; ${money(l.actualCost)}.</div></div>`;
+      return;
+    }
+    const c1 = calc(l);
+    const net = c1.act - c1.est;
+    const nothingYet = !c1.done && c1.inBal.length === 0;
+    const word = Math.abs(net) < 0.05 ? 'on estimate' : (net > 0 ? 'over' : 'under');
+    const fullPct = l.estimateVolume > 0 ? (l.actualVolume / l.estimateVolume * 100).toFixed(1) : null;
+    const rows = c1.cats.map(c => {
+      const v = c.actualVolume - c.estimateVolume;
+      const notStarted = !c1.done && c.actualVolume === 0;
+      const varCell = notStarted
+        ? '<span style="color:var(--text-muted)">not started</span>'
+        : (c.estimateVolume === 0 ? `<span style="color:var(--red)">${sgn(v)} (not in estimate)</span>` : `<span style="color:${colorOf(v)}">${sgn(v)}</span>`);
+      return `<tr class="${notStarted ? 'notcounted' : ''}"><td>${c.category}</td><td>${f1(c.actualVolume)}</td><td>${c.estimateVolume > 0 ? f1(c.estimateVolume) : '\u2014'}</td><td>${varCell}</td></tr>`;
+    }).join('');
+    el.innerHTML = `
+      <div class="bal-card">
+        <div class="bal-head">
+          <span class="bal-title">${l.level} balance across all categories${c1.done ? ' <span class="lvl-badge">\u2713 level complete</span>' : ''}</span>
+          <span class="bal-net" style="color:${nothingYet ? 'var(--text-muted)' : colorOf(net)}">${nothingYet ? 'Not started' : (c1.done ? 'Final' : 'So far') + ': ' + (Math.abs(net) < 0.05 ? 'on estimate' : f1(Math.abs(net)) + ' m\u00b3 ' + word) + pctOf(net, c1.est)}</span>
+        </div>
+        <div class="bal-sub">${nothingYet ? 'No category on this level has been poured yet.' : whereText(c1.inBal, 'actualVolume', 'estimateVolume', 'category')}</div>
+        ${nothingYet ? '' : `<div class="bal-sub">Volume counted: <strong>${f1(c1.act)} m\u00b3</strong> poured vs ${f1(c1.est)} m\u00b3 estimated &middot; ${costText(c1.actC, c1.estC)}</div>`}
+        ${c1.done ? '' : `<div class="bal-sub">Level not marked complete: only categories that have started are counted, so unpoured categories don't show as under. Whole level so far: ${f1(l.actualVolume)} of ${f1(l.estimateVolume)} m\u00b3${fullPct !== null ? ' (' + fullPct + '%)' : ''}.</div>`}
+        <table class="bal-table">
+          <thead><tr><th>Category</th><th>Poured m\u00b3</th><th>Estimate m\u00b3</th><th>Over / under</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr><td>${c1.done ? 'Level total' : 'Counted total'}</td><td>${f1(c1.act)}</td><td>${f1(c1.est)}</td><td style="color:${colorOf(net)}">${sgn(net)}</td></tr></tfoot>
+        </table>
+      </div>`;
     return;
   }
 
-  const overs = inBal.filter(c => c.actualVolume - c.estimateVolume > 0.05).sort((a, b) => (b.actualVolume - b.estimateVolume) - (a.actualVolume - a.estimateVolume));
-  const unders = inBal.filter(c => c.actualVolume - c.estimateVolume < -0.05).sort((a, b) => (a.actualVolume - a.estimateVolume) - (b.actualVolume - b.estimateVolume));
-  const list = (arr) => arr.map(c => `${c.category} (${sgn(c.actualVolume - c.estimateVolume)})`).join(', ');
-  const nothingYet = !done && inBal.length === 0;
-  const where = nothingYet ? 'No category on this level has been poured yet.' : (overs.length || unders.length)
-    ? `${overs.length ? 'Over in: <strong style="color:var(--red)">' + list(overs) + '</strong>. ' : ''}${unders.length ? 'Under in: <strong style="color:var(--green)">' + list(unders) + '</strong>.' : ''}`
-    : 'Every category counted is right on its estimate.';
+  // ---------------- several levels combined ----------------
+  const withData = items.filter(i => i.l).map(i => i.l);
+  const mapped = withData.filter(l => l.estimateMapped).map(calc);
+  const unmapped = withData.filter(l => !l.estimateMapped);
+  const noData = items.filter(i => !i.l).map(i => i.code);
+  const counted = mapped.filter(p => p.inBal.length > 0);
+  const allDone = mapped.length > 0 && mapped.every(p => p.done);
+  const doneCount = mapped.filter(p => p.done).length;
+  const act = sum(counted, 'act'), est = sum(counted, 'est'), actC = sum(counted, 'actC'), estC = sum(counted, 'estC');
+  const net = act - est;
+  const nothingYet = counted.length === 0;
+  const catMap = {};
+  counted.forEach(p => p.inBal.forEach(c => {
+    const m = catMap[c.category] || (catMap[c.category] = { category: c.category, act: 0, est: 0 });
+    m.act += c.actualVolume; m.est += c.estimateVolume;
+  }));
+  const catRows = Object.values(catMap).sort((a, b) => Math.max(b.act, b.est) - Math.max(a.act, a.est));
+  const fullAct = sum(mapped.map(p => p.l), 'actualVolume'), fullEst = sum(mapped.map(p => p.l), 'estimateVolume');
+  const fullPct = fullEst > 0 ? (fullAct / fullEst * 100).toFixed(1) : null;
+  const title = (ls.isAll ? 'All levels' : levelLabel(ls.codes)) + ' balance across all categories';
   const word = Math.abs(net) < 0.05 ? 'on estimate' : (net > 0 ? 'over' : 'under');
-  const pctTxt = est > 0 ? ' (' + (net > 0 ? '+' : (net < 0 ? '\u2212' : '')) + Math.abs(net / est * 100).toFixed(1) + '%)' : '';
-  const fullPct = l.estimateVolume > 0 ? (l.actualVolume / l.estimateVolume * 100).toFixed(1) : null;
 
-  const rows = cats.map(c => {
-    const v = c.actualVolume - c.estimateVolume;
-    const notStarted = !done && c.actualVolume === 0;
-    const varCell = notStarted
-      ? '<span style="color:var(--text-muted)">not started</span>'
-      : (c.estimateVolume === 0
-          ? `<span style="color:var(--red)">${sgn(v)} (not in estimate)</span>`
-          : `<span style="color:${colorOf(v)}">${sgn(v)}</span>`);
-    return `<tr class="${notStarted ? 'notcounted' : ''}"><td>${c.category}</td><td>${f1(c.actualVolume)}</td><td>${c.estimateVolume > 0 ? f1(c.estimateVolume) : '\u2014'}</td><td>${varCell}</td></tr>`;
+  const catHtml = catRows.map(c => {
+    const v = c.act - c.est;
+    const cell = c.est === 0 ? `<span style="color:var(--red)">${sgn(v)} (not in estimate)</span>` : `<span style="color:${colorOf(v)}">${sgn(v)}</span>`;
+    return `<tr><td>${c.category}</td><td>${f1(c.act)}</td><td>${c.est > 0 ? f1(c.est) : '\u2014'}</td><td>${cell}</td></tr>`;
   }).join('');
+  const levelHtml = mapped.map(p => {
+    const name = p.l.level + (p.done ? ' <span class="lvl-badge">\u2713 complete</span>' : '');
+    if (p.inBal.length === 0) return `<tr class="notcounted"><td>${name}</td><td>${f1(p.l.actualVolume)}</td><td>${f1(p.l.estimateVolume)}</td><td>not started</td></tr>`;
+    const v = p.act - p.est;
+    return `<tr><td>${name}</td><td>${f1(p.act)}</td><td>${f1(p.est)}</td><td style="color:${colorOf(v)}">${sgn(v)}</td></tr>`;
+  }).join('') + unmapped.map(l => `<tr class="notcounted"><td>${l.level}</td><td>${f1(l.actualVolume)}</td><td>\u2014</td><td>not in takeoff</td></tr>`).join('');
 
   el.innerHTML = `
     <div class="bal-card">
       <div class="bal-head">
-        <span class="bal-title">${l.level} balance across all categories${done ? ' <span class="lvl-badge">\u2713 level complete</span>' : ''}</span>
-        <span class="bal-net" style="color:${nothingYet ? 'var(--text-muted)' : colorOf(net)}">${nothingYet ? 'Not started' : (done ? 'Final' : 'So far') + ': ' + (Math.abs(net) < 0.05 ? 'on estimate' : f1(Math.abs(net)) + ' m\u00b3 ' + word) + pctTxt}</span>
+        <span class="bal-title">${title}${allDone ? ' <span class="lvl-badge">\u2713 all complete</span>' : ''}</span>
+        <span class="bal-net" style="color:${nothingYet ? 'var(--text-muted)' : colorOf(net)}">${nothingYet ? 'Not started' : (allDone ? 'Final' : 'So far') + ': ' + (Math.abs(net) < 0.05 ? 'on estimate' : f1(Math.abs(net)) + ' m\u00b3 ' + word) + pctOf(net, est)}</span>
       </div>
-      <div class="bal-sub">${where}</div>
-      ${nothingYet ? '' : `<div class="bal-sub">Volume counted: <strong>${f1(act)} m\u00b3</strong> poured vs ${f1(est)} m\u00b3 estimated &middot; Cost: <strong>${money(actC)}</strong> vs ${money(estC)} estimated (<span style="color:${colorOf(netC)}">${Math.abs(netC) < 0.5 ? 'on estimate' : money(netC) + (netC > 0 ? ' over' : ' under')}</span>)</div>`}
-      ${done ? '' : `<div class="bal-sub">Level not marked complete: only categories that have started are counted, so unpoured categories don't show as under. Whole level so far: ${f1(l.actualVolume)} of ${f1(l.estimateVolume)} m\u00b3${fullPct !== null ? ' (' + fullPct + '%)' : ''}.</div>`}
+      <div class="bal-sub">${nothingYet ? 'Nothing has been poured on the selected levels yet.' : whereText(catRows, 'act', 'est', 'category')}</div>
+      ${nothingYet ? '' : `<div class="bal-sub">Volume counted: <strong>${f1(act)} m\u00b3</strong> poured vs ${f1(est)} m\u00b3 estimated &middot; ${costText(actC, estC)}</div>`}
+      <div class="bal-sub">${doneCount} of ${mapped.length} selected level${mapped.length === 1 ? '' : 's'} marked complete. Levels not marked complete only count categories that have started, so unpoured categories don't show as under. Selected levels so far: ${f1(fullAct)} of ${f1(fullEst)} m\u00b3${fullPct !== null ? ' (' + fullPct + '%)' : ''}.</div>
+      ${unmapped.length ? `<div class="bal-sub">Not counted (not in the takeoff): ${unmapped.map(l => l.level + ' (' + f1(l.actualVolume) + ' m\u00b3 poured)').join(', ')}.</div>` : ''}
+      ${noData.length ? `<div class="bal-sub">No data yet for: ${noData.join(', ')}.</div>` : ''}
+      ${nothingYet ? '' : `<div class="bal-sec">By category (all selected levels combined)</div>
       <table class="bal-table">
         <thead><tr><th>Category</th><th>Poured m\u00b3</th><th>Estimate m\u00b3</th><th>Over / under</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr><td>${done ? 'Level total' : 'Counted total'}</td><td>${f1(act)}</td><td>${f1(est)}</td><td style="color:${colorOf(net)}">${sgn(net)}</td></tr></tfoot>
+        <tbody>${catHtml}</tbody>
+        <tfoot><tr><td>Counted total</td><td>${f1(act)}</td><td>${f1(est)}</td><td style="color:${colorOf(net)}">${sgn(net)}</td></tr></tfoot>
+      </table>`}
+      <div class="bal-sec">By level</div>
+      <table class="bal-table">
+        <thead><tr><th>Level</th><th>Poured m\u00b3</th><th>Estimate m\u00b3</th><th>Over / under</th></tr></thead>
+        <tbody>${levelHtml}</tbody>
       </table>
     </div>`;
 }
@@ -982,20 +1103,20 @@ function mixNoteHtml(groupKey, mixesUsed) {
 // shown for context (the takeoff only budgets mix lines for the whole project,
 // not per level).
 function renderMixForSelection() {
-  const lvl = document.getElementById('sel-level').value;
+  const ls = levelSelection();
   const cat = document.getElementById('sel-cat').value;
   const mix = document.getElementById('sel-mix').value;
-  const lvlOn = lvl && lvl !== 'ALL', catOn = cat && cat !== 'ALL', mixOn = mix && mix !== 'ALL';
+  const lvlOn = !ls.none && !ls.isAll, catOn = cat && cat !== 'ALL', mixOn = mix && mix !== 'ALL';
   const scopeEl = document.getElementById('mix-scope');
   if (!lvlOn && !catOn && !mixOn) {
     if (scopeEl) scopeEl.textContent = '\u00b7 whole project';
     renderMixComparison(_mixRows);
     return;
   }
-  const parts = [lvlOn ? lvl : null, catOn ? cat : null, mixOn ? mix : null].filter(Boolean);
+  const parts = [lvlOn ? levelLabel(ls.codes) : null, catOn ? cat : null, mixOn ? mix : null].filter(Boolean);
   if (scopeEl) scopeEl.textContent = '\u00b7 showing ' + parts.join(' \u00b7 ') + ' (project-wide budget shown for context)';
   const sel = _pours.filter(p =>
-    (!lvlOn || p.level === lvl) && (!catOn || p.category === cat) && (!mixOn || p.mix === mix));
+    (!lvlOn || ls.codes.includes(p.level)) && (!catOn || p.category === cat) && (!mixOn || p.mix === mix));
   const byGroup = {};
   for (const p of sel) {
     const g = byGroup[p.group] || (byGroup[p.group] = { vol: 0, cost: 0, mixes: {} });
@@ -1077,6 +1198,10 @@ function renderMixComparison(mixRows) {
 }
 
 document.addEventListener && document.addEventListener('keydown', sectionKeys);
+document.addEventListener && document.addEventListener('click', function (e) {
+  const box = document.getElementById('ms-level');
+  if (box && box.contains && !box.contains(e.target)) closeLevelMenu();
+});
 applySectionState();
 
 sync();
