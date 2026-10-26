@@ -115,6 +115,7 @@
     cursor: pointer;
     letter-spacing: 0.02em;
   }
+  a.btn-secondary { display: inline-block; text-decoration: none; line-height: normal; }
   .btn-secondary:hover { background: #FCEBEB; }
   .btn-secondary.active { background: var(--brand-red); color: #fff; }
 
@@ -348,6 +349,7 @@
   <div class="toolbar">
     <div id="status">Not synced yet</div>
     <div style="display:flex; gap:10px;">
+      <a id="pour-map-btn" class="btn-secondary" href="pour-map.html">Pour Map</a>
       <button id="sov-btn" class="btn-secondary" onclick="toggleSov()">Schedule of Values</button>
       <button id="help-btn" class="btn-secondary" aria-expanded="false" onclick="toggleHelp()">Help</button>
       <button id="sync-btn" onclick="sync()">Sync now</button>
@@ -485,6 +487,7 @@
         <summary>10. Other things you can do</summary>
         <div class="help-body"><ul>
           <li><strong>Hide or show a section:</strong> click its heading bar (the arrow on the right). The dashboard remembers your choice on this device.</li>
+          <li><strong>Pour Map:</strong> opens the pour map page, where pours are drawn on the level drawings. Its <strong>Dashboard</strong> button brings you back here.</li>
           <li><strong>Schedule of Values:</strong> the contract concrete mix rates and additional charges, for reference.</li>
           <li><strong>Amber message above Level completion or Notes:</strong> the site's saved data could not be reached, so your change is kept on this device only. It is sent automatically when the connection comes back. If it keeps appearing, tell whoever looks after the dashboard.</li>
         </ul></div>
