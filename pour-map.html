@@ -122,6 +122,8 @@ canvas{display:block;}
     <button class="tbtn" onclick="clearLastPoint()" id="undo-btn" style="display:none;">&#8592; Undo point</button>
     <button class="tbtn" onclick="cancelDraw()" id="cancel-btn" style="display:none;">&#215; Cancel</button>
     <div class="tsep"></div>
+    <button class="tbtn" id="pw-change-btn" onclick="openChangePassword()" title="Change the edit password">&#128273; Password</button>
+    <div class="tsep"></div>
   </div>
   <select class="tsel" id="level-sel" onchange="switchLevel()">
         <option value="P2">P2</option>
@@ -202,6 +204,30 @@ canvas{display:block;}
     <div class="modal-actions">
       <button class="mbtn mbtn-cancel" onclick="closePasswordModal()">Cancel</button>
       <button class="mbtn mbtn-save" onclick="submitPassword()">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change edit password -->
+<div class="overlay" id="cp-overlay" style="display:none;">
+  <div class="modal" style="max-width:360px;">
+    <h3>&#128273; Change edit password</h3>
+    <div class="fg">
+      <label>Current password (or master code)</label>
+      <input type="password" id="cp-current" autocomplete="off"/>
+    </div>
+    <div class="fg">
+      <label>New password (min 8 characters)</label>
+      <input type="password" id="cp-new" autocomplete="off"/>
+    </div>
+    <div class="fg">
+      <label>Confirm new password</label>
+      <input type="password" id="cp-confirm" autocomplete="off" onkeydown="if(event.key==='Enter')submitChangePassword()"/>
+    </div>
+    <div id="cp-msg" style="font-size:12px;min-height:16px;"></div>
+    <div class="modal-actions">
+      <button class="mbtn mbtn-cancel" onclick="closeChangePassword()">Cancel</button>
+      <button class="mbtn mbtn-save" id="cp-save" onclick="submitChangePassword()">Change password</button>
     </div>
   </div>
 </div>
@@ -525,7 +551,7 @@ function resetZoom(){fitToWindow();}
 // ---- Render ----------------------------------------------------------------------------------------------------------------------------------------
 function render(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  if(bg.complete)ctx.drawImage(bg,0,0,canvas.width,canvas.height);
+  if(bg.complete&&bg.naturalWidth>0)ctx.drawImage(bg,0,0,canvas.width,canvas.height);
   const levelPours=pours.filter(p=>p.level===currentLevel||!p.level||(p.mixes&&p.mixes.some(m=>m.level===currentLevel)));
   const hasFocus=!!selected;
   levelPours.forEach(p=>drawPour(p,p===selected,hasFocus&&p!==selected));
@@ -749,8 +775,8 @@ async function verifyPassword(pw) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: pw })
     });
-    return res.ok;
-  } catch(e) { return false; }
+    return res.status;
+  } catch(e) { return 0; }
 }
 
 function applyMode() {
@@ -779,15 +805,15 @@ function applyMode() {
 async function toggleMode() {
   if (editorMode) {
     // Lock: back to viewer, forget the password
-    cancelDraw();
     editorMode = false;
     editPassword = '';
     sessionStorage.removeItem('pm-edit-pw');
+    try { cancelDraw(); } catch(e) { console.warn(e); }
     applyMode();
     return;
   }
   // Unlock: reuse password from this session if we have one
-  if (editPassword && await verifyPassword(editPassword)) {
+  if (editPassword && (await verifyPassword(editPassword)) === 200) {
     editorMode = true;
     applyMode();
     return;
@@ -807,14 +833,23 @@ async function submitPassword() {
   if (!pw) return;
   const errEl = document.getElementById('pw-error');
   errEl.textContent = 'Checking...';
-  if (await verifyPassword(pw)) {
+  const status = await verifyPassword(pw);
+  if (status === 200) {
     editPassword = pw;
     sessionStorage.setItem('pm-edit-pw', pw);
     editorMode = true;
     closePasswordModal();
     applyMode();
-  } else {
+  } else if (status === 401) {
     errEl.textContent = 'Incorrect password.';
+  } else if (status === 404) {
+    errEl.textContent = 'Unlock service not found (HTTP 404). verify-edit.js is not deployed in netlify/functions.';
+  } else if (status === 500) {
+    errEl.textContent = 'Server error (HTTP 500). Check the Netlify function log for verify-edit.';
+  } else if (status === 0) {
+    errEl.textContent = 'Could not reach the server. Check your connection.';
+  } else {
+    errEl.textContent = 'Unexpected error (HTTP ' + status + ').';
   }
 }
 
@@ -825,6 +860,62 @@ function handleUnauthorized() {
   sessionStorage.removeItem('pm-edit-pw');
   applyMode();
   alert('Edit password was rejected. Switched back to view mode.');
+}
+
+// ---- Change edit password ---------------------------------------------------
+function openChangePassword() {
+  if (!editorMode) return;
+  ['cp-current','cp-new','cp-confirm'].forEach(id => document.getElementById(id).value = '');
+  const msg = document.getElementById('cp-msg');
+  msg.textContent = ''; msg.style.color = 'var(--red)';
+  document.getElementById('cp-overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('cp-current').focus(), 50);
+}
+
+function closeChangePassword() {
+  document.getElementById('cp-overlay').style.display = 'none';
+}
+
+async function submitChangePassword() {
+  if (!editorMode) return;
+  const msg = document.getElementById('cp-msg');
+  const btn = document.getElementById('cp-save');
+  const cur = document.getElementById('cp-current').value;
+  const nw = document.getElementById('cp-new').value;
+  const conf = document.getElementById('cp-confirm').value;
+  msg.style.color = 'var(--red)';
+  if (!cur) { msg.textContent = 'Enter the current password.'; return; }
+  if (nw.length < 8) { msg.textContent = 'New password must be at least 8 characters.'; return; }
+  if (nw !== conf) { msg.textContent = 'New passwords do not match.'; return; }
+  btn.disabled = true;
+  msg.style.color = 'var(--text-muted)';
+  msg.textContent = 'Saving...';
+  try {
+    const res = await fetch('/.netlify/functions/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: cur, newPassword: nw })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      // The new password is now the live one; keep this session unlocked with it
+      editPassword = nw;
+      sessionStorage.setItem('pm-edit-pw', nw);
+      msg.style.color = '#3b6d11';
+      msg.textContent = 'Password changed.';
+      setTimeout(closeChangePassword, 1200);
+    } else if (res.status === 404) {
+      msg.style.color = 'var(--red)';
+      msg.textContent = 'change-password.js is not deployed in netlify/functions (HTTP 404).';
+    } else {
+      msg.style.color = 'var(--red)';
+      msg.textContent = data.error || ('Could not change password (HTTP ' + res.status + ').');
+    }
+  } catch (e) {
+    msg.style.color = 'var(--red)';
+    msg.textContent = 'Could not reach the server.';
+  }
+  btn.disabled = false;
 }
 
 function setTool(t){
