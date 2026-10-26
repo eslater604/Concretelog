@@ -121,8 +121,10 @@
   .sov-panel { background: var(--bg); border-bottom: 1px solid var(--border); }
   .pm-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
   .pm-dialog { background: var(--card); border-radius: 14px; max-width: 420px; width: 100%; padding: 20px 22px; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
-  .pm-title { margin: 0 0 8px; font-size: 16px; font-weight: 700; }
-  .pm-text { margin: 0 0 16px; font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+  .pm-dialog { outline: none; }
+  .pm-title { margin: 0 0 8px; font-size: 17px; font-weight: 800; }
+  .pm-text { margin: 0 0 10px; font-size: 14px; color: var(--text); line-height: 1.5; }
+  .pm-sub { margin: 0 0 16px; font-size: 12px; color: var(--text-muted); }
   .pm-actions { display: flex; justify-content: flex-end; gap: 8px; }
   .help-wrap { max-width: 920px; padding-top: 16px; padding-bottom: 16px; }
   .help-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
@@ -353,7 +355,7 @@
   <div class="toolbar">
     <div id="status">Not synced yet</div>
     <div style="display:flex; gap:10px;">
-      <button id="pour-map-btn" class="btn-secondary" onclick="askPourMap()">Pour Map</button>
+      <button id="pm-open-btn" class="btn-secondary" onclick="askPourMap()">Pour map</button>
       <button id="sov-btn" class="btn-secondary" onclick="toggleSov()">Schedule of Values</button>
       <button id="help-btn" class="btn-secondary" aria-expanded="false" onclick="toggleHelp()">Help</button>
       <button id="sync-btn" onclick="sync()">Sync now</button>
@@ -388,12 +390,13 @@
 
 
   <div id="pm-overlay" class="pm-overlay" style="display:none;" onclick="if (event.target === this) closePourMapConfirm()">
-    <div class="pm-dialog" role="dialog" aria-modal="true" aria-labelledby="pm-title">
-      <p id="pm-title" class="pm-title">The Pour Map is still being built</p>
-      <p class="pm-text">This section is still being built and may not be fully updated. Click Continue to open it anyway.</p>
+    <div id="pm-box" class="pm-dialog" role="dialog" aria-modal="true" aria-labelledby="pm-title" tabindex="-1">
+      <p id="pm-title" class="pm-title">Pour map is under construction</p>
+      <p class="pm-text">The pour map is still being built and tested. The pours drawn on it, and the details and percentages shown, may be incomplete or inaccurate. Please don&rsquo;t rely on it yet.</p>
+      <p class="pm-sub">Your dashboard figures are not affected.</p>
       <div class="pm-actions">
         <button type="button" class="lvl-btn" onclick="closePourMapConfirm()">Cancel</button>
-        <button type="button" class="lvl-btn primary" onclick="goToPourMap()">Continue to Pour Map</button>
+        <button type="button" class="lvl-btn primary" onclick="goToPourMap()">I understand, open the pour map</button>
       </div>
     </div>
   </div>
@@ -502,7 +505,7 @@
         <summary>10. Other things you can do</summary>
         <div class="help-body"><ul>
           <li><strong>Hide or show a section:</strong> click its heading bar (the arrow on the right). The dashboard remembers your choice on this device.</li>
-          <li><strong>Pour Map:</strong> opens the pour map page, where pours are drawn on the level drawings. That section is still being built and may not be fully updated, so the button first asks you to confirm: click <strong>Continue to Pour Map</strong> to go there, or <strong>Cancel</strong> to stay. Its <strong>Dashboard</strong> button brings you back here.</li>
+          <li><strong>Pour Map:</strong> opens the pour map page, where pours are drawn on the level drawings. That section is still under construction and may be incomplete or inaccurate, so the button first shows a warning: click <strong>I understand, open the pour map</strong> to go there, or <strong>Cancel</strong> to stay. Its <strong>Dashboard</strong> button brings you back here.</li>
           <li><strong>Schedule of Values:</strong> the contract concrete mix rates and additional charges, for reference.</li>
           <li><strong>Amber message above Level completion or Notes:</strong> the site's saved data could not be reached, so your change is kept on this device only. It is sent automatically when the connection comes back. If it keeps appearing, tell whoever looks after the dashboard.</li>
         </ul></div>
@@ -615,13 +618,19 @@ let sovRendered = false;
 function askPourMap() {
   const o = document.getElementById('pm-overlay');
   if (o) o.style.display = 'flex';
+  const box = document.getElementById('pm-box');
+  if (box && box.focus) box.focus();          // focus the box itself, so pressing Enter does not proceed
 }
 function closePourMapConfirm() {
   const o = document.getElementById('pm-overlay');
+  const wasOpen = o && o.style.display !== 'none';
   if (o) o.style.display = 'none';
+  const btn = document.getElementById('pm-open-btn');
+  if (wasOpen && btn && btn.focus) btn.focus();
 }
 function goToPourMap() {
-  closePourMapConfirm();
+  const o = document.getElementById('pm-overlay');
+  if (o) o.style.display = 'none';
   window.location.href = 'pour-map.html';
 }
 function closeHelp() {
