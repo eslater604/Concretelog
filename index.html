@@ -432,7 +432,7 @@
       <details class="help-sec">
         <summary>5. Marking a level complete</summary>
         <div class="help-body"><ul>
-          <li>Open the <strong>Level completion</strong> section. Each level has a bar showing poured vs estimate, with a <strong>Mark complete</strong> button. Use it when the level's concrete is finished.</li>
+          <li>Open the <strong>Level completion</strong> section. Each level has a bar showing poured vs estimate, with a <strong>Mark complete</strong> button. Use it when the level's concrete is finished. The button asks you to confirm: click <strong>Yes, mark complete</strong> (or <strong>Cancel</strong>). If some of that level's POs are still not ticked complete in the log, the confirmation warns you.</li>
           <li>A completed level gets a green &ldquo;&#10003; complete&rdquo; tag, and its balance becomes the <strong>Final</strong> over or under. The top of the section adds up all completed levels, with volume and cost over or under the estimate.</li>
           <li><strong>Reopen</strong> needs a second click on <strong>Yes, reopen</strong>, so a level cannot be reopened by accident. <strong>Cancel</strong> keeps it complete.</li>
           <li>Marks are saved on the site and shared. On another device they can take up to a minute to appear.</li>
@@ -722,6 +722,7 @@ let _levelSource = 'server';   // 'server' = shared marks; 'device' = fallback k
 let _levelNote = '';           // visible explanation shown above the Level completion list
 let _levelBusy = null;         // level code currently being saved
 let _levelConfirm = null;      // level code waiting for "Yes, reopen" confirmation
+let _completeConfirm = null;   // level code waiting for "Yes, mark complete" confirmation
 
 // ---- Collapsible sections (state is remembered in this browser) ----
 const SECTION_IDS = ['summary', 'bylevel', 'levels', 'mix'];
@@ -1194,6 +1195,7 @@ async function loadLevelStatus() {
 
 function askReopen(code) {
   if (_levelBusy) return;
+  _completeConfirm = null;
   _levelConfirm = code;
   renderLevelPanel();
 }
@@ -1201,15 +1203,27 @@ function cancelReopen() {
   _levelConfirm = null;
   renderLevelPanel();
 }
+function askComplete(code) {
+  if (_levelBusy) return;
+  _levelConfirm = null;
+  _completeConfirm = code;
+  renderLevelPanel();
+}
+function cancelComplete() {
+  _completeConfirm = null;
+  renderLevelPanel();
+}
 
-// confirmed = true only comes from the "Yes, reopen" button, so a level can never be
-// reopened by a single click.
+// confirmed = true only comes from the "Yes, mark complete" / "Yes, reopen" buttons, so a level's
+// status can never be changed by a single click.
 async function toggleLevelComplete(code, confirmed) {
   if (_levelBusy) return;             // ignore clicks while a save is in flight
   const isComplete = !!_levelStatus[code];
   if (isComplete && !confirmed) { askReopen(code); return; }
+  if (!isComplete && !confirmed) { askComplete(code); return; }
   const makeComplete = !isComplete;
   _levelConfirm = null;
+  _completeConfirm = null;
   const at = new Date().toISOString();
   rememberChange(code, makeComplete, at);
   _levelBusy = code;
@@ -1490,13 +1504,17 @@ function renderLevelPanel() {
     }
     const dis = _levelBusy ? 'disabled' : '';
     let actionHtml;
-    if (!isDone) {
-      actionHtml = `<button class="lvl-btn primary" ${dis} onclick="toggleLevelComplete('${l.level}')">${_levelBusy === l.level ? 'Saving\u2026' : 'Mark complete'}</button>`;
+    if (!isDone && _completeConfirm === l.level) {
+      actionHtml = `<span class="lvl-confirm">Mark ${l.level} complete? <button class="lvl-btn primary" ${dis} onclick="toggleLevelComplete('${l.level}', true)">Yes, mark complete</button> <button class="lvl-btn" ${dis} onclick="cancelComplete()">Cancel</button></span>`;
+    } else if (!isDone) {
+      actionHtml = `<button class="lvl-btn primary" ${dis} onclick="askComplete('${l.level}')">${_levelBusy === l.level ? 'Saving\u2026' : 'Mark complete'}</button>`;
     } else if (_levelConfirm === l.level) {
       actionHtml = `<span class="lvl-confirm">Reopen ${l.level}? <button class="lvl-btn danger" ${dis} onclick="toggleLevelComplete('${l.level}', true)">Yes, reopen</button> <button class="lvl-btn" ${dis} onclick="cancelReopen()">Cancel</button></span>`;
     } else {
       actionHtml = `<button class="lvl-btn" ${dis} onclick="askReopen('${l.level}')">${_levelBusy === l.level ? 'Saving\u2026' : 'Reopen'}</button>`;
     }
+    const confirmWarn = (!isDone && _completeConfirm === l.level && l.pendingVolume > 0)
+      ? `<div class="lvl-warn">\u26a0 ${f1(l.pendingVolume)} m\u00b3 on ${l.level} is still logged without &ldquo;Completed by Site Team&rdquo; ticked. It will not be counted in the final figures.</div>` : '';
     return `
       <div class="lvl-row${isDone ? ' done' : ''}">
         <div class="lvl-head">
@@ -1505,6 +1523,7 @@ function renderLevelPanel() {
         </div>
         <div class="bar-track"><div class="bar-fill" style="width:${pct === null ? 0 : Math.min(pct, 100)}%;background:${barColor};"></div></div>
         <div class="row-bottom"><span>${f1(act)} of ${est > 0 ? f1(est) : '\u2014'} m\u00b3${pend}</span><span>${money(l.actualCost)}</span></div>
+        ${confirmWarn}
         ${detail}
       </div>`;
   }).join('');
