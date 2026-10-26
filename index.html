@@ -118,6 +118,19 @@
   .btn-secondary:hover { background: #FCEBEB; }
   .btn-secondary.active { background: var(--brand-red); color: #fff; }
 
+  /* Pour map notice (confirmation pop-up) */
+  .pm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .pm-overlay[hidden] { display: none; }
+  .pm-box { background: #fff; border-radius: 14px; padding: 22px 24px; max-width: 440px; width: 100%; box-shadow: 0 12px 48px rgba(0,0,0,.28); outline: none; color: var(--text); }
+  .pm-box h3 { margin: 0 0 10px; font-size: 17px; font-weight: 800; }
+  .pm-box p { margin: 0 0 10px; font-size: 14px; line-height: 1.5; }
+  .pm-box p.pm-sub { font-size: 12px; color: var(--text-secondary); }
+  .pm-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; margin-top: 18px; }
+  .pm-actions button { border-radius: 999px; padding: 9px 20px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .pm-cancel { background: #fff; color: var(--text); border: 1px solid var(--border); }
+  .pm-go { background: var(--brand-red); color: #fff; border: none; }
+  .pm-go:hover { background: var(--brand-red-light); }
+
   .sov-panel { background: var(--bg); border-bottom: 1px solid var(--border); }
   .help-wrap { max-width: 920px; padding-top: 16px; padding-bottom: 16px; }
   .help-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
@@ -345,6 +358,7 @@
   <div class="toolbar">
     <div id="status">Not synced yet</div>
     <div style="display:flex; gap:10px;">
+      <button id="pm-btn" class="btn-secondary" onclick="openPourMapNotice()">Pour map</button>
       <button id="sov-btn" class="btn-secondary" onclick="toggleSov()">Schedule of Values</button>
       <button id="help-btn" class="btn-secondary" aria-expanded="false" onclick="toggleHelp()">Help</button>
       <button id="sync-btn" onclick="sync()">Sync now</button>
@@ -536,6 +550,19 @@
 
     <footer>Category-level costs use a proxy rate (blended actual $/m3 per category) since there's no per-category precon budget yet. The whole-building total uses the real $2,726,165 precon concrete budget.</footer>
   </div>
+
+<!-- Pour map notice: must be confirmed before opening the pour map -->
+<div class="pm-overlay" id="pm-overlay" hidden onclick="if (event.target === this) closePourMapNotice()">
+  <div class="pm-box" id="pm-box" role="dialog" aria-modal="true" aria-labelledby="pm-title" tabindex="-1">
+    <h3 id="pm-title">Pour map is under construction</h3>
+    <p>The pour map is still being built and tested. The pours drawn on it, and the details and percentages shown, may be incomplete or inaccurate. Please don&rsquo;t rely on it yet.</p>
+    <p class="pm-sub">Your dashboard figures are not affected.</p>
+    <div class="pm-actions">
+      <button type="button" class="pm-cancel" onclick="closePourMapNotice()">Cancel</button>
+      <button type="button" class="pm-go" onclick="goToPourMap()">I understand, open the pour map</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // Schedule of values - contract rates by mix (03-30-150). Reference only;
@@ -752,12 +779,28 @@ function applySectionState() {
   SECTION_IDS.forEach(id => setSectionVisible(id, !state[id]));
 }
 function sectionKeys(e) {
-  if (e.key === 'Escape') closeLevelMenu();
+  if (e.key === 'Escape') { closeLevelMenu(); closePourMapNotice(); }
   if (e.key === 'Enter' || e.key === ' ') {
     const t = e.target && e.target.id;
     if (t && t.indexOf('sec-label-') === 0) { e.preventDefault(); toggleSection(t.slice('sec-label-'.length)); }
   }
 }
+
+// ---- Pour map: confirm before opening ----
+const POUR_MAP_URL = 'pour-map.html';
+function openPourMapNotice() {
+  const o = document.getElementById('pm-overlay');
+  o.hidden = false;
+  document.getElementById('pm-box').focus();
+}
+function closePourMapNotice() {
+  const o = document.getElementById('pm-overlay');
+  if (!o || o.hidden) return;
+  o.hidden = true;
+  const b = document.getElementById('pm-btn');
+  if (b) b.focus();
+}
+function goToPourMap() { window.location.href = POUR_MAP_URL; }
 
 // ---- Notes: why a level / category is over or under ----
 // Saved on the site (shared). Changes made in this browser are remembered for a few minutes and
