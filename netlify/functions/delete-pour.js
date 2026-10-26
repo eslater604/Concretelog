@@ -1,13 +1,21 @@
 const crypto = require("crypto");
-const { getStore, connectLambda } = require("@netlify/blobs");
+
+// Accepts the regular edit password or the master override, both read from
+// Netlify environment variables (never stored in the code).
+function passwordMatches(given) {
+  const allowed = [process.env.EDIT_PASSWORD, process.env.EDIT_PASSWORD_MASTER].filter(Boolean);
+  const a = Buffer.from(String(given || ""));
+  return allowed.some(p => {
+    const b = Buffer.from(p);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  });
+}
 
 function authorized(event) {
-  const expected = process.env.EDIT_PASSWORD || "";
-  const given = (event.headers && event.headers["x-edit-password"]) || "";
-  if (!expected) return false;
-  const a = Buffer.from(given), b = Buffer.from(expected);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  return passwordMatches(event.headers && event.headers["x-edit-password"]);
 }
+
+const { getStore, connectLambda } = require("@netlify/blobs");
 
 exports.handler = async function(event) {
   connectLambda(event);
