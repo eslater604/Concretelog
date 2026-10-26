@@ -81,8 +81,6 @@ canvas{display:block;}
 .fg label{display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
 .fg input,.fg select,.fg textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);background:var(--bg);}
 .fg input:focus,.fg select:focus{outline:none;border-color:var(--brand-red);}
-.po-info{background:var(--bg);border-radius:8px;padding:10px 12px;margin-top:8px;font-size:12px;color:var(--text-secondary);display:none;}
-.po-info.show{display:block;}
 .po-mix-row{border-top:1px solid var(--border);margin-top:8px;padding-top:8px;}
 .cost-total{font-size:13px;font-weight:700;color:var(--text);margin-top:6px;}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:1.25rem;}
@@ -144,6 +142,23 @@ canvas{display:block;}
 .li-toggle:hover{opacity:.75;}
 .li-off{opacity:.4;text-decoration:line-through;}
 .li-all{color:var(--brand-red);font-weight:700;text-decoration:none !important;}
+.pl-top{margin:0 0 8px;}
+.pl-count{font-size:12px;color:var(--text-secondary);margin-bottom:4px;}
+.pl-opts{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-secondary);}
+.pl-opts label{cursor:pointer;}
+.pl-warn{font-size:11px;color:#854f0b;background:#faeeda;border-radius:6px;padding:6px 8px;margin-bottom:8px;}
+.pl-muted{font-size:11px;color:var(--text-muted);margin-top:6px;}
+.pl-unlocated{font-size:11px;color:#854f0b;margin-top:2px;}
+.pl-tent{display:inline-block;font-size:10px;font-weight:700;color:#7a7972;background:#e9e8e3;border-radius:999px;padding:0 7px;margin-left:6px;vertical-align:middle;}
+.pl-tentnote{font-size:11px;color:#8a8982;margin-top:2px;}
+.pl-group{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin:12px 0 2px;}
+.pour-list-item.tentative{background:#f6f5f2;}
+.pour-list-item.tentative .pour-list-title{color:#8a8982;}
+.pour-list-item.tentative .pour-list-sub{color:#b0afa8;}
+.pour-list-num.tent{background:#fff !important;color:#98978f !important;border:2px dashed #c4c3bc !important;}
+.pl-draw{border:1px solid var(--brand-red);background:#fff;color:var(--brand-red);border-radius:999px;font-size:11px;font-weight:700;padding:3px 10px;cursor:pointer;margin-right:6px;white-space:nowrap;}
+.pl-draw:hover{background:#FCEBEB;}
+.tbtn.sm{font-size:11px;padding:3px 10px;}
 </style>
 </head>
 <body class="cfg-loading">
@@ -171,9 +186,6 @@ canvas{display:block;}
   <button class="tbtn" id="mode-toggle" onclick="toggleMode()" style="font-weight:700;">&#128274; Edit mode</button>
   <div class="tsep"></div>
   <div id="editor-tools" style="display:flex;gap:6px;align-items:center;">
-    <button class="tbtn active" id="tool-draw" onclick="setTool('draw')">&#9651; Log pour</button>
-    <button class="tbtn" id="tool-select" onclick="setTool('select')">&#9654; Select</button>
-    <div class="tsep"></div>
     <button class="tbtn" onclick="clearLastPoint()" id="undo-btn" style="display:none;">&#8592; Undo point</button>
     <button class="tbtn" onclick="cancelDraw()" id="cancel-btn" style="display:none;">&#215; Cancel</button>
     <div class="tsep"></div>
@@ -186,7 +198,7 @@ canvas{display:block;}
   <button class="tbtn" onclick="zoomOut()">&#8722;</button>
   <button class="tbtn" onclick="resetZoom()">Fit</button>
   <span id="drawing-badge" style="font-size:11px;padding:3px 8px;border-radius:999px;background:var(--border);color:var(--text-muted);display:none;"></span>
-  <span id="status-bar">Select "Log pour" then click points on the plan -- double-click to close</span>
+  <span id="status-bar">Click a pour on the map or in the list to see its details</span>
 </div>
 
 <div class="legend">
@@ -383,28 +395,6 @@ canvas{display:block;}
     <div class="modal-actions">
       <button class="mbtn mbtn-cancel" onclick="document.getElementById('upload-overlay').style.display='none'">Cancel</button>
       <button class="mbtn mbtn-save" id="upload-save-btn" onclick="uploadDrawing()">Upload &amp; save</button>
-    </div>
-  </div>
-</div>
-
-<!-- Pour form -->
-<div class="overlay" id="pour-overlay" style="display:none;">
-  <div class="modal">
-    <h3>&#x1F4C4; Link pour to Smartsheet PO</h3>
-    <div class="fg">
-      <label>Select PO &mdash; date &amp; details auto-fill from Smartsheet</label>
-      <select id="f-po" onchange="onPOSelect()">
-        <option value="">-- Select a PO --</option>
-      </select>
-    </div>
-    <div class="po-info" id="po-info"></div>
-    <div class="fg" style="margin-top:10px;">
-      <label>Materials test PO # <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted);">(optional -- for reference)</span></label>
-      <input type="text" id="f-test-po" placeholder="e.g. LAB-2026-0042"/>
-    </div>
-    <div class="modal-actions">
-      <button class="mbtn mbtn-cancel" onclick="closePourForm()">Cancel</button>
-      <button class="mbtn mbtn-save" id="save-btn" disabled onclick="savePour()">Save pour</button>
     </div>
   </div>
 </div>
@@ -744,6 +734,7 @@ function applyConfig() {
 
   document.body.classList.remove('cfg-loading');
   if (currentLevel !== prevLevel) { selected = null; loadDrawingForLevel(currentLevel); }   // the level being viewed was removed
+  rebuildPours();
   buildPourList();
   updateLevelBanner();
   render();
@@ -841,8 +832,8 @@ function cfgLevelMove(i, d) {
 }
 function cfgLevelDel(i) {
   const l = cfgDraft.levels[i];
-  const n = pours.filter(p => p.level === l.code).length;
-  if (n && !confirm('"' + l.name + '" has ' + n + ' logged pour' + (n === 1 ? '' : 's') + '. Those pours stay saved but won\'t show on the map unless a level with the same code exists. Delete anyway?')) return;
+  const n = savedPours.filter(p => p.level === l.code && getShapes(p).length).length;
+  if (n && !confirm('"' + l.name + '" has ' + n + ' drawn pour area' + (n === 1 ? '' : 's') + '. They stay saved but won\'t show on the map unless a level with the same code exists. Delete anyway?')) return;
   cfgDraft.levels.splice(i, 1); renderSetup();
 }
 function cfgLevelAdd() { cfgDraft.levels.push({ code: '', name: '', dash: '' }); renderSetup(); }
@@ -971,10 +962,10 @@ const canvas=document.getElementById('c');
 const ctx=canvas.getContext('2d');
 const wrap=document.getElementById('canvas-wrap');
 let bg=new Image(), scale=1;
-let currentPts=[], pours=[], selected=null, tool='draw', smData=null;
+let currentPts=[], pours=[], selected=null, tool='select', smData=null;
 let hoverPt=null, hoverRaf=0; // live cursor position while drawing
 const CLOSE_PX = 14;      // how close (screen px) to the first dot counts as 'finish here'
-let currentLevel='P2', pendingPts=null, redrawingId=null;
+let currentLevel='P2', drawFor=null;   // drawFor: { id, mode: 'add' | 'redraw' } while an area is being drawn
 
 bg = new Image();   // the level's drawing is loaded once the site settings are known (see initSite)
 
@@ -988,7 +979,7 @@ function resetZoom(){fitToWindow();}
 function render(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if(bg.complete&&bg.naturalWidth>0)ctx.drawImage(bg,0,0,canvas.width,canvas.height);
-  const levelPours=pours.filter(p=>p.level===currentLevel||!p.level||(p.mixes&&p.mixes.some(m=>m.level===currentLevel)));
+  const levelPours=pours.filter(p=>p.level===currentLevel);
   const hasFocus=!!selected;
   // pour types switched off in the legend are skipped (a focused pour is always shown)
   const shown=levelPours.filter(p=>p===selected||!hiddenTypes.has(p.type||guessType(p)));
@@ -1167,11 +1158,12 @@ function drawPour(p, sel, dimmed, at) {
   const shapes = getShapes(p);
   if (shapes.length === 0) return;
   const type=p.type||guessType(p);
-  const base=TYPE_COLORS[type]||'#d4725a';
+  const tent=p.completed===false;                                   // tentative booking: grey
+  const base=tent?'#9a9992':(TYPE_COLORS[type]||'#d4725a');
   const [r,g,b]=hexRgb(base);
-  const fillAlpha=dimmed?0.08:sel?0.75:0.55;
+  const fillAlpha=dimmed?0.08:sel?0.75:(tent?0.25:0.55);
   const strokeAlpha=dimmed?0.15:1;
-  const fill=typeFill(type)==='hatch' ? hatchPattern([r,g,b], dimmed?0.12:sel?0.95:0.8, hatchDir(type)) : `rgba(${r},${g},${b},${fillAlpha})`;
+  const fill=(!tent&&typeFill(type)==='hatch') ? hatchPattern([r,g,b], dimmed?0.12:sel?0.95:0.8, hatchDir(type)) : `rgba(${r},${g},${b},${fillAlpha})`;
   // Draw all shapes for this pour
   shapes.forEach(pts => {
     if (!pts || pts.length < 3) return;
@@ -1181,12 +1173,11 @@ function drawPour(p, sel, dimmed, at) {
     ctx.closePath();
     ctx.fillStyle=fill;ctx.fill();
     ctx.strokeStyle=dimmed?`rgba(${r},${g},${b},${strokeAlpha})`:sel?'#1a6bff':base;
-    ctx.lineWidth=sel?3:2;ctx.stroke();
+    ctx.lineWidth=sel?3:2;ctx.setLineDash(tent?[6,4]:[]);ctx.stroke();ctx.setLineDash([]);
   });
   if(dimmed)return;
 
-  const levelPours=pours.filter(x=>x.level===currentLevel||!x.level||(x.mixes&&x.mixes.some(m=>m.level===currentLevel)));
-  const num=levelPours.indexOf(p)+1;
+  const num=p.num;
   // Badge sits at the visual centre of the pour's largest shape (render nudges it clear of other badges)
   const lp = at || labelInfo(p) || { x: 0, y: 0 };
   const fs=Math.max(9,Math.round(11*scale));
@@ -1198,7 +1189,7 @@ function drawPour(p, sel, dimmed, at) {
   ctx.fillStyle=sel?'#1a6bff':base;ctx.fill();
   ctx.font=`bold ${fs}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.fillStyle='#fff';
-  ctx.fillText(num>0?num:'?', bx, by);
+  ctx.fillText(num>0?num:'\u2013', bx, by);
 
   // -- PO number under the badge --
   if(p.po){
@@ -1226,7 +1217,7 @@ canvas.addEventListener('click',e=>{
     document.getElementById('cancel-btn').style.display='';
     document.getElementById('undo-btn').style.display='';
   } else {
-    const hit=[...pours].reverse().find(p=>(p.level===currentLevel||!p.level)&&!hiddenTypes.has(p.type||guessType(p))&&getShapes(p).some(pts=>ptIn(pt,pts)));
+    const hit=[...pours].reverse().find(p=>p.level===currentLevel&&!hiddenTypes.has(p.type||guessType(p))&&getShapes(p).some(pts=>ptIn(pt,pts)));
     // Toggle focus: click focused pour again to clear focus
     if(hit){
       selected=(selected&&selected.id===hit.id)?null:hit;
@@ -1262,32 +1253,15 @@ function nearFirstPoint(pt){
   return Math.hypot((pt.x-f.x)*scale,(pt.y-f.y)*scale) < CLOSE_PX;
 }
 
-// Close the shape being drawn: save it as a redraw, or open the PO form
+// Close the shape being drawn and attach it to the pour it was started for
 function finishDraw(){
   if(currentPts.length<3){ setStatus('A pour area needs at least 3 points'); return; }
   hoverPt=null;
-  if(redrawingId){
-    // Save new polygon to existing pour
-    const p=pours.find(x=>x.id===redrawingId);
-    if(p){
-      // Replace the last shape (most recently added) or the only shape
-      const shapes=p.shapes||[p.points].filter(Boolean);
-      if(shapes.length>0) shapes[shapes.length-1]=[...currentPts];
-      else shapes.push([...currentPts]);
-      p.shapes=shapes;
-      p.points=shapes[0];
-      persistPour(p);
-    }
-    redrawingId=null;
-    currentPts=[];
-    setTool('select');
-    ['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');
-    setStatus('Polygon updated');
-    buildPourList();
-    render();
-  } else {
-    openForm();
-  }
+  const target=drawFor, pts=[...currentPts];
+  currentPts=[]; drawFor=null;
+  setTool('select');
+  ['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');
+  if(target) commitArea(target.id, pts, target.mode); else render();
 }
 function evtPt(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)/scale,y:(e.clientY-r.top)/scale};}
 function ptIn(pt,pts){
@@ -1330,7 +1304,7 @@ function applyMode() {
     btn.style.color = '#854f0b';
     editorTools.style.display = 'flex';
     if (uploadBtn) uploadBtn.style.display = '';
-    wrap.className = 'canvas-wrap';
+    wrap.className = 'canvas-wrap' + (tool === 'draw' ? '' : ' mode-select');
   } else {
     btn.innerHTML = '&#128065; View mode (click to edit)';
     btn.style.background = '#eaf3de';
@@ -1339,7 +1313,7 @@ function applyMode() {
     if (uploadBtn) uploadBtn.style.display = 'none';
     wrap.className = 'canvas-wrap mode-select';
   }
-  setStatus(editorMode ? 'Editor mode -- draw and log pours' : 'Viewer mode -- read only');
+  setStatus(editorMode ? 'Edit mode -- open a pour in the list and press Draw area' : 'Viewer mode -- read only');
   buildPourList();
 }
 
@@ -1461,14 +1435,12 @@ async function submitChangePassword() {
 
 function setTool(t){
   tool=t;
-  document.getElementById('tool-select').classList.toggle('active',t==='select');
-  document.getElementById('tool-draw').classList.toggle('active',t==='draw');
   wrap.className='canvas-wrap'+(t==='select'?' mode-select':'');
   if(t!=='draw'){currentPts=[];render();['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');}
-  setStatus(t==='draw'?'Click to place points -- double-click to close and link a PO':'Click a pour to see details');
+  setStatus(t==='draw'?'Click to place points -- click the first dot or double-click to finish':'Click a pour on the map or in the list to see its details');
 }
 function clearLastPoint(){if(currentPts.length>0){currentPts.pop();render();}}
-function cancelDraw(){currentPts=[];redrawingId=null;render();['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');setStatus('Cancelled');}
+function cancelDraw(){currentPts=[];drawFor=null;hoverPt=null;setTool('select');['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');setStatus('Cancelled');}
 function setStatus(m){document.getElementById('status-bar').textContent=m;}
 // ---- Lab testing reports, matched to pours by date -----------------------------
 // Each entry is a saved report: { key, kind, number, date, ageDays, mpa, pctSpec, hasFile, ... }
@@ -2113,8 +2085,8 @@ function openImport() {
   document.getElementById('imp-help').innerHTML =
     'Choose a Bluebeam PDF of <strong>' + esc(levelName(currentLevel)) + '</strong> where each pour has a text callout that ends with its PO number ' +
     '(for example <em>Aug 5 - L pad - 60m3 - 665-3027C</em>), and its area drawn as polygons or circles with arrows to the callout. ' +
-    'The PDF is read in your browser and is not uploaded. Pours are added to <strong>' + esc(levelName(currentLevel)) + '</strong> ' +
-    '(switch level first if that is wrong). The date, mix and cost come from Smartsheet, matched by PO number.';
+    'The PDF is read in your browser and is not uploaded. The areas are attached to the matching pours on <strong>' + esc(levelName(currentLevel)) + '</strong> ' +
+    '(switch level first if that is wrong), matched by PO number. Date, mix and cost come from Smartsheet.';
   document.getElementById('imp-overlay').style.display = 'flex';
 }
 function closeImport() { document.getElementById('imp-overlay').style.display = 'none'; }
@@ -2159,7 +2131,7 @@ function impBuildRows() {
   const smPos = (smData && smData.pos) || [];
   impRows = impPours.map((d, i) => {
     const po = smPos.find(x => impNorm(x.po) === impNorm(d.po)) || null;
-    const old = pours.filter(p => p.level === currentLevel && impNorm(p.po) === impNorm(d.po));
+    const old = savedPours.filter(p => p.level === currentLevel && impNorm(p.po) === impNorm(d.po) && getShapes(p).length);
     const smVol = po ? (po.mixes || []).reduce((a, m) => a + (Number(m.volume) || 0), 0) : null;
     return { i, d, po, old, smVol, checked: false, shapesApp: [] };
   });
@@ -2187,6 +2159,7 @@ function impRenderRows() {
     else status = '<span class="imp-ok">Ready</span>';
     if (r.po && r.po.date && d.markupDate && String(r.po.date).slice(0, 10) !== d.markupDate) notes.push('Smartsheet date differs from the markup');
     if (r.po && r.smVol != null && d.volume != null && Math.abs(r.smVol - d.volume) > 0.5) notes.push('Smartsheet volume ' + r.smVol + ' m\u00b3 vs ' + d.volume + ' m\u00b3 on the markup');
+    if (r.po && r.po.completed === false) notes.push('Not ticked "Completed by Site Team" in the log yet, so it will show as a tentative booking');
     if (!r.po && r.shapesApp.length) notes.push('Would use the markup date and have no cost data. Tick it only if you want it anyway.');
     if (d.needsCheck.length) notes.push('One shape was matched by colour only, so check it on the map');
     const sm = r.po ? esc(String(r.po.date || '').slice(0, 10)) + ' &middot; ' + r.smVol + ' m\u00b3' : '&mdash;';
@@ -2257,14 +2230,14 @@ async function impRun() {
           const dr = await fetch('/.netlify/functions/delete-pour', { method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ id: o.id }) });
           if (dr.status === 401) { closeImport(); handleUnauthorized(); return; }
           if (!dr.ok) throw new Error('could not remove the old pour (HTTP ' + dr.status + ')');
-          pours = pours.filter(x => x.id !== o.id);
+          savedPours = savedPours.filter(x => x.id !== o.id);
           try { localStorage.removeItem('pour-' + o.id); } catch (e) {}
         }
         r.old = [];
       }
       const po = r.po, shapes = r.shapesApp;
       const pour = {
-        id: 'pour-' + (base + k),
+        id: areaId(po ? po.po : r.d.po, currentLevel),
         po: po ? po.po : r.d.po,
         date: (po && po.date) ? po.date : r.d.markupDate,
         type: po ? typeForLocation((po.mixes && po.mixes[0] && po.mixes[0].location) || '') : impGuessType(r.d),
@@ -2276,15 +2249,15 @@ async function impRun() {
       const res = await fetch('/.netlify/functions/save-pour', { method: 'POST', headers: authHeaders(), body: JSON.stringify(pour) });
       if (res.status === 401) { closeImport(); handleUnauthorized(); return; }
       if (!res.ok) throw new Error('save failed (HTTP ' + res.status + ')');
-      pours.push(pour); r.old = [pour]; r.checked = false; ok++;
+      savedPours.push(pour); r.old = [pour]; r.checked = false; ok++;
     } catch (e) {
       impMsg(r.d.po + ': ' + e.message + '. Stopped after ' + ok + ' imported.');
-      btn.disabled = false; selected = null; buildPourList(); render(); impRenderRows();
+      btn.disabled = false; selected = null; rebuildPours(); buildPourList(); render(); impRenderRows();
       return;
     }
   }
   selected = null;
-  buildPourList(); render(); impRenderRows();
+  rebuildPours(); buildPourList(); render(); impRenderRows();
   impMsg(ok + ' pour' + (ok === 1 ? '' : 's') + ' imported onto ' + levelName(currentLevel) + '. Close this window to see them on the map.', true);
   setStatus(ok + ' pours imported');
 }
@@ -2428,6 +2401,7 @@ function updateLevelBanner() {
 }
 
 function switchLevel(){
+  if (drawFor || currentPts.length) cancelDraw();
   currentLevel=document.getElementById('level-sel').value;
   document.getElementById('level-label').textContent=levelName(currentLevel);
   document.getElementById('upload-level').value=currentLevel;
@@ -2437,117 +2411,74 @@ function switchLevel(){
   updateLevelBanner();
 }
 
-// ---- Pour form ----------------------------------------------------------------------------------------------------------------------------------
-function openForm(){
-  pendingPts=[...currentPts];
-  document.getElementById('f-po').value='';
-  document.getElementById('f-test-po').value='';
-  document.getElementById('po-info').className='po-info';
-  document.getElementById('save-btn').disabled=true;
-  populatePODropdown();
-  document.getElementById('pour-overlay').style.display='flex';
-}
-function closePourForm(){
-  document.getElementById('pour-overlay').style.display='none';
-  currentPts=[];pendingPts=null;render();
-  ['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');
+// ---- Pours: the Smartsheet PO list + where each one is on the map -------------------------------
+// The list of pours comes from the Concrete Log: every PO, refreshed on every sync. A saved "area" records where
+// a PO is on a level's drawing and is matched to its PO by PO number + level. A PO with no saved area is listed as
+// "not yet identified on the map" until someone draws it.
+let savedPours = [];            // saved areas, as held on the server
+let hideTentative = false;      // hide tentative bookings (POs with a level but not yet ticked 'Completed by Site Team')
+let completedKnown = true;      // false if the Smartsheet sync doesn't say which POs are complete
+let listOnlyUnlocated = false;  // list filter: only pours still to be drawn
+let smError = '';               // why the last Smartsheet read failed, if it did
+let unmappedPOs = 0;            // POs whose log level isn't a level in Site setup
+
+const poKey = s => String(s || '').replace(/\s+/g, '').toUpperCase();
+const areaId = (po, level) => 'area-' + poKey(po).replace(/[^A-Z0-9-]/g, '') + '-' + level;
+
+// the log's level code (L1, P2, P1...) -> the map level(s) it means. An exact level code wins (so P1 stays on P1 even
+// though P1a also shares the log's P1); otherwise levels whose "dashboard code" matches.
+function levelsForLogCode(code) {
+  const lv = siteConfig.levels || [];
+  const exact = lv.filter(l => l.code === code);
+  return (exact.length ? exact : lv.filter(l => l.dash === code)).map(l => l.code);
 }
 
-function populatePODropdown(){
-  const sel=document.getElementById('f-po');
-  sel.innerHTML='<option value="">-- Select a PO --</option>';
-  if(!smData){
-    const o=document.createElement('option');o.disabled=true;o.textContent='Sync with Smartsheet first to load POs';sel.appendChild(o);return;
+function rebuildPours() {
+  const sm = smData && smData.pos ? smData.pos : null;
+  const out = [], covered = new Set(), seenPO = new Set();
+  unmappedPOs = 0;
+  completedKnown = !sm || sm.length === 0 || sm.some(x => typeof x.completed === 'boolean');
+  if (sm) {
+    sm.forEach(po => {
+      const k = poKey(po.po);
+      if (!k || seenPO.has(k)) return;
+      seenPO.add(k);
+      if (po.completed === false && hideTentative) return;
+      const byLevel = new Map();
+      (po.mixes || []).forEach(m => levelsForLogCode(m.level || '').forEach(code => {
+        if (!byLevel.has(code)) byLevel.set(code, []);
+        byLevel.get(code).push(m);
+      }));
+      if (!byLevel.size && (po.mixes || []).length) unmappedPOs++;
+      byLevel.forEach((mixes, level) => {
+        const rec = savedPours.find(r => r.level === level && poKey(r.po) === k);
+        const biggest = mixes.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0))[0];
+        const whole = mixes.length === (po.mixes || []).length;
+        const live = {
+          po: po.po, level, date: po.date || (rec && rec.date) || '', completed: po.completed !== false,
+          type: typeForLocation((biggest && biggest.location) || ''), mixes,
+          totalCost: whole ? (po.totalCost || 0) : mixes.reduce((a, m) => a + (m.concreteCost || 0), 0), partial: !whole
+        };
+        if (rec) out.push(Object.assign({}, rec, live, { id: rec.id }));
+        else out.push(Object.assign(live, { id: areaId(po.po, level), shapes: [], points: [], virtual: true }));
+        covered.add(k + '|' + level);
+      });
+    });
   }
-  if(!smData.pos||smData.pos.length===0){
-    const o=document.createElement('option');o.disabled=true;o.textContent='No POs found -- try re-syncing';sel.appendChild(o);return;
-  }
-  smData.pos.forEach(po=>{
-    const o=document.createElement('option');
-    o.value=po.po;
-    o.textContent=po.po;
-    sel.appendChild(o);
+  savedPours.forEach(r => {                         // a saved drawing whose PO isn't in the sheet (any more)
+    if (sm && covered.has(poKey(r.po) + '|' + r.level)) return;
+    out.push(Object.assign({}, r, { orphan: !!sm }));
   });
+  out.sort((a, b) => (a.orphan ? 1 : 0) - (b.orphan ? 1 : 0) || String(a.date || '').localeCompare(String(b.date || '')) || String(a.po).localeCompare(String(b.po)));
+  // pour numbers: chronological among confirmed pours (tentative bookings take no number, so numbers stay put as bookings come and go)
+  const counts = {};
+  out.forEach(p => { if (p.completed === false) { p.num = null; return; } counts[p.level] = (counts[p.level] || 0) + 1; p.num = counts[p.level]; });
+  pours = out;
+  if (selected) selected = pours.find(x => x.id === selected.id) || null;
 }
 
-function onPOSelect(){
-  const poNum=document.getElementById('f-po').value;
-  const infoEl=document.getElementById('po-info');
-  const saveBtn=document.getElementById('save-btn');
-  if(!poNum||!smData||!smData.pos){infoEl.className='po-info';saveBtn.disabled=true;return;}
-  const po=smData.pos.find(p=>p.po===poNum);
-  if(!po){infoEl.className='po-info';saveBtn.disabled=true;return;}
-
-  // Check if already logged on this level
-  const existing=pours.find(p=>p.po===poNum&&p.level===currentLevel);
-  const shapeCount=existing?getShapes(existing).length:0;
-
-  let html=`<strong>${po.po}</strong>`;
-  if(existing) html+=` &nbsp;<span style="background:#eaf3de;color:#3b6d11;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;">&#43; adds area to existing pour (${shapeCount} area${shapeCount!==1?'s':''})</span>`;
-  if(po.date)html+=` &nbsp;&middot;&nbsp; ${po.date}`;
-  if(po.notes)html+=`<div style="color:var(--text-muted);margin-top:4px;font-style:italic;">${po.notes.slice(0,120)}${po.notes.length>120?'…':''}</div>`;
-
-  po.mixes.forEach((m,i)=>{
-    if(!m.volume)return;
-    html+=`<div class="po-mix-row"><strong>Mix ${i+1}:</strong> ${m.mixOrdered||m.mixCode||'--'}<br>`;
-    html+=`${m.volume}m³ &nbsp;·&nbsp; ${m.location||'--'} &nbsp;·&nbsp; Level ${m.level||'--'}<br>`;
-    html+=`Concrete: $${(m.concreteCost||0).toLocaleString()}`;
-    if(m.admixtures&&m.admixtures.length>0){
-      html+=`<br>Admixtures: `+m.admixtures.map(a=>`${a.name} ($${a.cost})`).join(', ');
-    }
-    html+='</div>';
-  });
-  html+=`<div class="cost-total">Total: $${(po.totalCost||0).toLocaleString()}</div>`;
-
-  infoEl.innerHTML=html;
-  infoEl.className='po-info show';
-  saveBtn.textContent=existing?'Add area to pour':'Save pour';
-  saveBtn.disabled=false;
-}
-
-async function savePour(){
-  const poNum=document.getElementById('f-po').value;
-  const po=smData&&smData.pos?smData.pos.find(p=>p.po===poNum):null;
-  const date=po&&po.date?po.date:new Date().toISOString().split('T')[0];
-  const type=po&&po.mixes&&po.mixes[0]?typeForLocation(po.mixes[0].location||''):defaultType();
-  const level=currentLevel;
-  const testPo=document.getElementById('f-test-po').value.trim();
-
-  // Check if this PO already has a pour logged on this level
-  const existing=pours.find(p=>p.po===poNum&&p.level===level);
-  if(existing){
-    // Add new shape to existing pour
-    const shapes=existing.shapes||[existing.points].filter(Boolean);
-    shapes.push([...pendingPts]);
-    existing.shapes=shapes;
-    existing.points=shapes[0]; // keep for backwards compat
-    await persistPour(existing);
-    closePourForm();
-    selected=existing;
-    buildPourList();
-    render();
-    setStatus('Added shape to '+poNum+' (now '+shapes.length+' areas)');
-  } else {
-    // New pour
-    const pour={
-      id:'pour-'+Date.now(),
-      po:poNum, date, type, level,
-      testPo:testPo||null,
-      mixes:po?po.mixes:[], totalCost:po?po.totalCost:0,
-      shapes:[[...pendingPts]],
-      points:[...pendingPts], // backwards compat
-      createdAt:new Date().toISOString(),
-      source:'pour-map'
-    };
-    pours.push(pour);
-    await persistPour(pour);
-    closePourForm();
-    selected=pour;
-    buildPourList();
-    render();
-    setStatus('Saved: '+poNum+' ('+date+') -- '+type+' -- '+levelName(level));
-  }
-}
+function setListFilter(v) { listOnlyUnlocated = !!v; buildPourList(); }
+function setHideTentative(v) { hideTentative = !!v; rebuildPours(); buildPourList(); render(); }
 
 // ---- Selection & panel ------------------------------------------------------------------------------------------------------------------
 function selectPour(p) {
@@ -2557,58 +2488,117 @@ function selectPour(p) {
 }
 
 function buildPourList() {
-  const levelPours = pours.filter(p => {
-    if(p.level===currentLevel) return true;
-    if(p.mixes&&p.mixes.some(m=>m.level===currentLevel)) return true;
-    // Also show if level is unset (older saved pours may not have it)
-    if(!p.level&&!p.mixes) return true;
-    return false;
-  });
+  const levelPours = pours.filter(p => p.level === currentLevel);
+  const confirmed = levelPours.filter(p => !p.orphan && p.completed !== false);     // ticked "Completed by Site Team"
+  const tentative = levelPours.filter(p => !p.orphan && p.completed === false);     // a level, but not ticked: a booking, not a confirmed pour
+  const located = confirmed.filter(p => getShapes(p).length > 0).length;
   document.getElementById('panel-title').textContent =
     'Logged pours -- ' + levelName(currentLevel) + ' (' + levelPours.length + ')';
   document.getElementById('del-btn').style.display = 'none';
+  const body = document.getElementById('panel-body');
+
+  const anyTent = !!(smData && smData.pos && smData.pos.some(x => x.completed === false));
+  const warn = smError ? '<div class="pl-warn">Couldn\u2019t read Smartsheet (' + esc(smError) + '). Showing drawn pours only.</div>' : '';
+  const noTick = (smData && smData.pos && smData.pos.length && !completedKnown)
+    ? '<div class="pl-warn">The Smartsheet sync doesn\u2019t report \u201cCompleted by Site Team\u201d, so tentative bookings can\u2019t be told apart. Every PO is shown as a confirmed pour.</div>' : '';
+  const opts = '<div class="pl-opts">' +
+    '<label><input type="checkbox" ' + (listOnlyUnlocated ? 'checked ' : '') + 'onchange="setListFilter(this.checked)"/> Only not yet identified</label>' +
+    (anyTent ? '<label><input type="checkbox" ' + (hideTentative ? 'checked ' : '') + 'onchange="setHideTentative(this.checked)"/> Hide tentative bookings</label>' : '') +
+    '</div>';
+  const unmapped = unmappedPOs ? '<div class="pl-muted">' + unmappedPOs + ' PO' + (unmappedPOs === 1 ? ' has' : 's have') + ' no level, or a level that isn\u2019t set up in Site setup, so ' + (unmappedPOs === 1 ? 'it isn\u2019t' : 'they aren\u2019t') + ' listed.</div>' : '';
+
   if (levelPours.length === 0) {
-    document.getElementById('panel-body').innerHTML =
-      '<p class="panel-empty">No pours logged for this level yet.<br><br>Select “Log pour”, draw a polygon on the plan, then pick the PO.</p>';
+    let msg;
+    if (!smData && !smError) msg = 'Reading the Concrete Log from Smartsheet...';
+    else if (!smData) msg = 'No pours have been drawn on this level yet.';
+    else msg = 'No POs in the Concrete Log are on ' + esc(levelName(currentLevel)) + ' yet.' + (hideTentative ? ' Tentative bookings are hidden.' : '');
+    body.innerHTML = warn + noTick + (anyTent ? '<div class="pl-top">' + opts + '</div>' : '') + '<p class="panel-empty">' + msg + '</p>' + unmapped;
     return;
   }
-  document.getElementById('panel-body').innerHTML = levelPours.map((p, i) => {
-    const typeColor = TYPE_COLORS[p.type||guessType(p)]||'#999';
-    const mixSummary = (p.mixes||[]).filter(m=>m.volume).map(m=>(m.mixCode||'?')+' '+m.volume+'m³').join(', ');
-    const shapeCount = getShapes(p).length;
+
+  // order: tentative bookings first (soonest first), then confirmed pours newest first, then drawings with no PO
+  const numbered = p => ({ p, num: p.num });
+  let shown = tentative.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).map(numbered)
+    .concat(confirmed.slice().reverse().map(numbered))
+    .concat(levelPours.filter(p => p.orphan).map(numbered));
+  if (listOnlyUnlocated) shown = shown.filter(x => !x.p.orphan && x.p.completed !== false && getShapes(x.p).length === 0);
+
+  const countBits = [];
+  if (confirmed.length) countBits.push('<strong>' + located + '</strong> of ' + confirmed.length + ' identified on the map');
+  if (tentative.length) countBits.push(tentative.length + ' tentative booking' + (tentative.length === 1 ? '' : 's'));
+  const top = warn + noTick + '<div class="pl-top">' + (countBits.length ? '<div class="pl-count">' + countBits.join(' &middot; ') + '</div>' : '') + opts + '</div>';
+  if (!shown.length) {
+    body.innerHTML = top + '<p class="panel-empty">Every pour on this level has been identified on the map.</p>' + unmapped;
+    return;
+  }
+
+  const groupOf = p => p.orphan ? 'other' : (p.completed === false ? 'tent' : 'conf');
+  const showGroups = new Set(shown.map(x => groupOf(x.p))).size > 1;
+  const groupLabel = { tent: 'Tentative bookings (not confirmed)', conf: 'Confirmed pours', other: 'Drawings with no PO in the log' };
+  let lastGroup = '';
+
+  body.innerHTML = top + shown.map((it, i) => {
+    const p = it.p, num = it.num;
+    const tent = p.completed === false;
+    const typeColor = TYPE_COLORS[p.type || guessType(p)] || '#999';
+    const shapeCount = getShapes(p).length, hasArea = shapeCount > 0;
+    const mixSummary = (p.mixes || []).filter(m => m.volume).map(m => (m.mixCode || '?') + ' ' + m.volume + 'm\u00b3').join(', ');
     const cmCount = (commentsByPour[p.id] || []).length;
     const isOpen = openPourCards.has(p.id) || (selected && selected.id === p.id);
-    return '<div class="pour-list-item" id="pli-'+i+'">' +
-      '<div class="pour-list-header" data-pid="'+p.id+'" onclick="togglePourItem('+i+',this.dataset.pid)">' +
-        '<div class="pour-list-num" style="background:'+typeColor+'">'+(i+1)+'</div>' +
+    const idAttr = ' data-id="' + esc(p.id) + '"';
+    const numStyle = tent ? '' : (hasArea ? 'background:' + typeColor : 'background:#fff;color:' + typeColor + ';border:2px dashed ' + typeColor);
+    const numText = tent ? '&#128197;' : (num || '\u2013');
+    const flag = p.orphan ? '<div class="pl-unlocated">No longer in Smartsheet (saved drawing only)</div>'
+               : (tent ? '<div class="pl-tentnote">Tentative booking, not a confirmed pour date</div>'
+               : (!hasArea ? '<div class="pl-unlocated">Not yet identified on the map</div>' : ''));
+    const tag = tent ? '<span class="pl-tent">Tentative</span>' : '';
+    const canDraw = editorMode && !p.orphan && !tent;
+    const drawHdr = (canDraw && !hasArea)
+      ? '<button class="pl-draw"' + idAttr + ' onclick="event.stopPropagation();startDraw(this.dataset.id,\'add\')">&#9998; Draw</button>' : '';
+
+    let btns = '';
+    if (hasArea) btns += '<button class="tbtn sm"' + idAttr + ' onclick="focusPour(this.dataset.id)">Focus</button>';
+    if (editorMode) {
+      if (!hasArea && canDraw) btns += '<button class="tbtn sm" style="background:#e6f1fb;color:#185fa5;border-color:#b3d4f5;"' + idAttr + ' onclick="startDraw(this.dataset.id,\'add\')">&#9998; Draw area</button>';
+      if (hasArea && canDraw) btns += '<button class="tbtn sm" style="background:#e6f1fb;color:#185fa5;border-color:#b3d4f5;"' + idAttr + ' onclick="startDraw(this.dataset.id,\'add\')">+ Add area</button>' +
+                                       '<button class="tbtn sm" style="background:#e6f1fb;color:#185fa5;border-color:#b3d4f5;"' + idAttr + ' onclick="startDraw(this.dataset.id,\'redraw\')">Redraw last</button>';
+      if (shapeCount > 1) btns += '<button class="tbtn sm" style="background:#faeeda;color:#854f0b;border-color:#f5d78e;"' + idAttr + ' onclick="deleteLastShape(this.dataset.id)">\u2190 Del last area</button>';
+      if (hasArea) btns += '<button class="tbtn sm" style="background:var(--red-bg);color:var(--red);border-color:#fcc;"' + idAttr + ' onclick="clearArea(this.dataset.id)">' + (p.orphan ? 'Delete' : 'Remove drawing') + '</button>';
+    }
+    const drawn = hasArea && (p.updatedAt || p.createdAt) ? '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Area drawn ' + new Date(p.updatedAt || p.createdAt).toLocaleDateString() + '</div>' : '';
+    const g = groupOf(p);
+    const heading = (showGroups && g !== lastGroup) ? '<div class="pl-group">' + groupLabel[g] + '</div>' : '';
+    lastGroup = g;
+
+    return heading + '<div class="pour-list-item' + (tent ? ' tentative' : '') + '" id="pli-' + i + '">' +
+      '<div class="pour-list-header" data-pid="' + esc(p.id) + '" onclick="togglePourItem(' + i + ',this.dataset.pid)">' +
+        '<div class="pour-list-num' + (tent ? ' tent' : '') + '" style="' + numStyle + '">' + numText + '</div>' +
         '<div style="flex:1;min-width:0;">' +
-          '<div class="pour-list-title">'+(p.po||'PO unknown')+'</div>' +
-          '<div class="pour-list-sub">'+(p.date||'')+' '+(p.type?'&middot; '+p.type:'')+(shapeCount>1?' &middot; '+shapeCount+' areas':'')+(cmCount?' &middot; &#128172; '+cmCount:'')+'</div>' +
-        '</div>' +
-        '<span class="pour-list-chevron'+(isOpen?' open':'')+'" id="chev-'+i+'">&#9654;</span>' +
+          '<div class="pour-list-title">' + esc(p.po || 'PO unknown') + tag + '</div>' +
+          '<div class="pour-list-sub">' + esc(p.date || '') + ' ' + (p.type ? '&middot; ' + esc(p.type) : '') + (shapeCount > 1 ? ' &middot; ' + shapeCount + ' areas' : '') + (cmCount ? ' &middot; &#128172; ' + cmCount : '') + '</div>' +
+          flag +
+        '</div>' + drawHdr +
+        '<span class="pour-list-chevron' + (isOpen ? ' open' : '') + '" id="chev-' + i + '">&#9654;</span>' +
       '</div>' +
-      '<div class="pour-list-body'+(isOpen?' open':'')+'" id="plb-'+i+'">' +
-        (mixSummary?'<div class="prow"><span>Mixes</span><span style="text-align:right;max-width:160px;font-size:11px;">'+mixSummary+'</span></div>':'') +
-        '<div class="prow"><span>Total cost</span><span><strong>$'+(p.totalCost||0).toLocaleString()+'</strong></span></div>' +
-        (p.testPo?'<div class="prow"><span>Test PO</span><span class="badge bx">&#x1F9EA; '+p.testPo+'</span></div>':'') +
+      '<div class="pour-list-body' + (isOpen ? ' open' : '') + '" id="plb-' + i + '">' +
+        (tent ? '<div class="prow"><span>Status</span><span style="font-size:11px;text-align:right;max-width:180px;">Not ticked \u201cCompleted by Site Team\u201d, so this date is a booking. It can be drawn once it is confirmed.</span></div>' : '') +
+        (mixSummary ? '<div class="prow"><span>Mixes</span><span style="text-align:right;max-width:160px;font-size:11px;">' + esc(mixSummary) + '</span></div>' : '') +
+        '<div class="prow"><span>Total cost</span><span><strong>$' + (p.totalCost || 0).toLocaleString() + '</strong></span></div>' +
+        (p.partial ? '<div class="prow"><span>Note</span><span style="font-size:11px;text-align:right;max-width:170px;">This PO also has mixes on other levels. Cost is for this level\u2019s mixes.</span></div>' : '') +
+        (p.testPo ? '<div class="prow"><span>Test PO</span><span class="badge bx">&#x1F9EA; ' + esc(p.testPo) + '</span></div>' : '') +
         reportLine(p) +
-        (p.mixes||[]).filter(m=>m.volume).map((m,mi)=>
+        (p.mixes || []).filter(m => m.volume).map((m, mi) =>
           '<div class="mix-card" style="margin-top:6px;">' +
-          '<div class="mix-card-title">Mix '+(mi+1)+': '+(m.mixCode||'--')+'</div>' +
-          '<div class="prow"><span>'+(m.location||'--')+'</span><span>Level '+(m.level||'--')+'</span></div>' +
-          '<div class="prow"><span>Volume</span><span>'+m.volume+'m³</span></div>' +
-          '<div class="prow"><span>Cost</span><span>$'+(m.concreteCost||0).toLocaleString()+'</span></div>' +
+          '<div class="mix-card-title">Mix ' + (mi + 1) + ': ' + esc(m.mixCode || '--') + '</div>' +
+          '<div class="prow"><span>' + esc(m.location || '--') + '</span><span>Level ' + esc(m.level || '--') + '</span></div>' +
+          '<div class="prow"><span>Volume</span><span>' + m.volume + 'm\u00b3</span></div>' +
+          '<div class="prow"><span>Cost</span><span>$' + (m.concreteCost || 0).toLocaleString() + '</span></div>' +
           '</div>').join('') +
         commentsBlock(p) +
-        '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">' +
-          '<button class="tbtn" style="font-size:11px;padding:3px 10px;" onclick="focusPour(\''+p.id+'\')">Focus</button>' +
-          (shapeCount>1 && editorMode ? '<button class="tbtn" style="font-size:11px;padding:3px 10px;background:#faeeda;color:#854f0b;border-color:#f5d78e;" onclick="deleteLastShape(\''+p.id+'\')">← Del last area</button>' : '') +
-          (editorMode ? '<button class="tbtn" style="font-size:11px;padding:3px 10px;background:#e6f1fb;color:#185fa5;border-color:#b3d4f5;" onclick="startRedraw(\''+p.id+'\')">Redraw</button>' : '') +
-          (editorMode ? '<button class="tbtn" style="font-size:11px;padding:3px 10px;background:var(--red-bg);color:var(--red);border-color:#fcc;" onclick="deletePourById(\''+p.id+'\')">Delete</button>' : '') +
-        '</div>' +
-        '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">'+(p.createdAt?new Date(p.createdAt).toLocaleString():'')+'</div>' +
+        (btns ? '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">' + btns + '</div>' : '') +
+        drawn +
       '</div></div>';
-  }).join('');
+  }).join('') + unmapped;
 }
 
 function togglePourItem(i, id) {
@@ -2630,63 +2620,94 @@ function focusPour(id) {
 }
 
 
-// redrawingId declared above
-
-function startRedraw(id) {
-  const p = pours.find(x=>x.id===id);
-  if (!p) return;
-  redrawingId = id;
+// Start drawing an area for a pour: 'add' puts a new area on it, 'redraw' replaces its last one
+function startDraw(id, mode) {
+  if (!editorMode) return;
+  const p = pours.find(x => x.id === id);
+  if (!p || p.level !== currentLevel) return;
+  if (p.completed === false) { setStatus(p.po + ' is a tentative booking. It can be drawn once the site team marks it complete in the log.'); return; }
+  if (drawFor || currentPts.length) { currentPts = []; hoverPt = null; }
+  drawFor = { id, mode: (mode === 'redraw' && getShapes(p).length) ? 'redraw' : 'add' };
   selected = p;
-  currentPts = [];
   setTool('draw');
-  setStatus('Redrawing ' + (p.po||'pour') + ' -- click new points, double-click to finish');
-  document.getElementById('cancel-btn').style.display='';
-  document.getElementById('undo-btn').style.display='';
+  setStatus('Drawing the area for ' + p.po + ' -- click points on the plan, then click the first dot or double-click to finish');
+  document.getElementById('cancel-btn').style.display = '';
+  document.getElementById('undo-btn').style.display = '';
   buildPourList();
   render();
-}
-async function deleteLastShape(id) {
-  const p = pours.find(x=>x.id===id);
-  if (!p) return;
-  const shapes = getShapes(p);
-  if (shapes.length <= 1) { if(!confirm("Only one area — delete the whole pour?")) return; await deletePourById(id); return; }
-  shapes.pop();
-  p.shapes = shapes;
-  p.points = shapes[0];
-  await persistPour(p);
-  buildPourList();
-  render();
-  setStatus("Last area removed from " + (p.po||"pour") + " (" + shapes.length + " remaining)");
 }
 
-async function deletePourById(id) {
-  const p = pours.find(x=>x.id===id);
-  if (!p||!confirm('Delete pour '+(p.po||'')+'?')) return;
-  pours = pours.filter(x=>x.id!==id);
+// Save a finished area against its pour (creating the saved area the first time)
+async function commitArea(id, pts, mode) {
+  const p = pours.find(x => x.id === id);
+  if (!p) { render(); return; }
+  const now = new Date().toISOString();
+  let rec = savedPours.find(r => r.id === id);
+  if (!rec) {
+    rec = { id, po: p.po, level: p.level, date: p.date, type: p.type, mixes: p.mixes, totalCost: p.totalCost,
+            shapes: [], points: [], createdAt: now, source: 'smartsheet' };
+    savedPours.push(rec);
+  }
+  const shapes = getShapes(rec).slice();
+  if (mode === 'redraw' && shapes.length) shapes[shapes.length - 1] = pts; else shapes.push(pts);
+  rec.shapes = shapes; rec.points = shapes[0]; rec.updatedAt = now;
+  const ok = await persistPour(rec);
+  rebuildPours(); buildPourList(); render();
+  setStatus(ok ? 'Area saved for ' + p.po + (shapes.length > 1 ? ' (' + shapes.length + ' areas)' : '')
+               : 'Area drawn for ' + p.po + ' but could not be saved to the server -- kept on this device only');
+}
+
+async function deleteLastShape(id) {
+  const rec = savedPours.find(x => x.id === id);
+  if (!rec) return;
+  const shapes = getShapes(rec).slice();
+  if (shapes.length <= 1) { await clearArea(id); return; }
+  shapes.pop();
+  rec.shapes = shapes; rec.points = shapes[0]; rec.updatedAt = new Date().toISOString();
+  await persistPour(rec);
+  rebuildPours(); buildPourList(); render();
+  setStatus('Last area removed from ' + (rec.po || 'pour') + ' (' + shapes.length + ' remaining)');
+}
+
+// Take a pour's drawing off the map. The pour stays in the list (it is still in Smartsheet) and can be drawn again.
+async function clearArea(id) {
+  const rec = savedPours.find(x => x.id === id);
+  if (!rec) return;
+  const p = pours.find(x => x.id === id);
+  const msg = (p && p.orphan) ? 'Delete the saved drawing for ' + rec.po + '? It is no longer in Smartsheet.'
+                              : 'Remove the drawn area for ' + rec.po + '? The pour stays in the list and can be drawn again.';
+  if (!confirm(msg)) return;
+  savedPours = savedPours.filter(x => x.id !== id);
   await deletePour(id);
   selected = null;
-  buildPourList();
-  render();
+  rebuildPours(); buildPourList(); render();
 }
 
 async function deleteSelected(){
   if(!selected) return;
-  await deletePourById(selected.id);
+  await clearArea(selected.id);
 }
 
 
 // ---- Persistence ------------------------------------------------------------------------------------------------------------------------------
 async function persistPour(pour){
-  try{const r=await fetch('/.netlify/functions/save-pour',{method:'POST',headers:authHeaders(),body:JSON.stringify(pour)});if(r.status===401)handleUnauthorized();}catch(e){}
+  let ok=false;
+  try{const r=await fetch('/.netlify/functions/save-pour',{method:'POST',headers:authHeaders(),body:JSON.stringify(pour)});if(r.status===401)handleUnauthorized();ok=r.ok;}catch(e){}
   try{localStorage.setItem('pour-'+pour.id,JSON.stringify(pour));}catch(e){}
+  return ok;
 }
 async function loadPours(){
+  let loaded=null;
   try{
     const res=await fetch('/.netlify/functions/load-pours');
-    if(res.ok){const d=await res.json();pours=d.pours||[];render();buildPourList();return;}
+    if(res.ok){const d=await res.json();loaded=d.pours||[];}
   }catch(e){}
-  pours=[];
-  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('pour-'))try{pours.push(JSON.parse(localStorage.getItem(k)));}catch(e){}}
+  if(!loaded){
+    loaded=[];
+    for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('pour-'))try{loaded.push(JSON.parse(localStorage.getItem(k)));}catch(e){}}
+  }
+  savedPours=loaded;
+  rebuildPours();
   render();
   buildPourList();
 }
@@ -2704,6 +2725,8 @@ async function syncData(){
     const data=await res.json();
     if(!res.ok)throw new Error(data.error||'failed');
     smData=data;
+    smError='';
+    rebuildPours();
     loadLevelStatus();
     loadComments();
     loadReports();
@@ -2711,7 +2734,7 @@ async function syncData(){
     if(selected)selectPour(selected);
     buildPourList();
     render();
-  }catch(e){el.textContent='Sync failed: '+e.message;}
+  }catch(e){el.textContent='Sync failed: '+e.message;smError=e.message;rebuildPours();buildPourList();render();}
 }
 window.addEventListener('load',()=>{applyMode();loadLevelStatus();loadComments();loadReports();setTimeout(syncData,600);initSite();});
 </script>
