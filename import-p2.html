@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="robots" content="noindex"/>
+<title>One-time import: Level P2 pours</title>
+<style>
+:root{--red:#B3261E;--bg:#F3F2EE;--border:#E4E2DC;--text:#1c1c1a;--muted:#6b6a64;--green:#3b6d11;--amber:#854f0b;--bad:#a32d2d;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);}
+header{background:var(--red);color:#fff;padding:14px 22px;}
+header h1{margin:0;font-size:18px;} header p{margin:3px 0 0;font-size:12px;opacity:.85;}
+main{max-width:1060px;margin:0 auto;padding:18px 22px 60px;}
+.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:14px;}
+.card h2{margin:0 0 8px;font-size:14px;}
+.muted{color:var(--muted);font-size:12px;line-height:1.5;}
+input[type=password]{padding:8px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;width:240px;}
+button{border:none;border-radius:999px;padding:8px 20px;font-size:13px;font-weight:700;cursor:pointer;background:var(--red);color:#fff;}
+button:disabled{opacity:.45;cursor:default;}
+button.ghost{background:#fff;color:var(--text);border:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--border);}
+td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:top;}
+tr:last-child td{border-bottom:none;}
+.ok{color:var(--green);font-weight:700;} .warn{color:var(--amber);font-weight:700;} .bad{color:var(--bad);font-weight:700;}
+.note{display:block;font-size:11px;color:var(--amber);margin-top:2px;}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle;}
+canvas{width:100%;border:1px solid var(--border);border-radius:8px;background:#fff;}
+#msg{font-size:12px;min-height:18px;margin-top:8px;}
+.hidden{display:none;}
+</style>
+</head>
+<body>
+<header>
+  <h1>One-time import: Level P2 pours</h1>
+  <p>Loads the shapes from your Bluebeam markup onto the pour map. Delete this page from the site afterwards.</p>
+</header>
+<main>
+  <div class="card" id="unlock">
+    <h2>1. Unlock</h2>
+    <p class="muted">Importing writes to the live pour map, so it needs the same edit password as the map.</p>
+    <input type="password" id="pw" autocomplete="off" placeholder="Edit password" onkeydown="if(event.key==='Enter')unlock()"/>
+    <button onclick="unlock()">Unlock</button>
+    <div id="umsg" class="bad" style="font-size:12px;min-height:18px;margin-top:8px;"></div>
+  </div>
+
+  <div class="hidden" id="work">
+    <div class="card">
+      <h2>2. Check what was found</h2>
+      <p class="muted" id="summary"></p>
+      <canvas id="preview" width="1000" height="844"></canvas>
+      <p class="muted">Shapes are drawn on the built-in P2 drawing, numbered to match the list below.</p>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead><tr><th></th><th>#</th><th>PO</th><th>From your markup</th><th>From Smartsheet</th><th>Shapes</th><th>Status</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="muted" style="margin-top:10px;">Date, mix and cost always come from Smartsheet, matched by PO number. Rows that are ticked will be imported. Nothing is saved until you press Import.</p>
+      <label class="muted" style="display:block;margin:8px 0;"><input type="checkbox" id="replace" onchange="applyDefaults()"/>
+        Replace pours already on P2 that share a PO with this list (the old one is deleted, the new one added). Other P2 pours are never touched.</label>
+    </div>
+
+    <div class="card">
+      <h2>3. Import</h2>
+      <button id="go" onclick="runImport()">Import ticked pours</button>
+      <button class="ghost" onclick="location.reload()">Start over</button>
+      <div id="msg"></div>
+      <p class="muted hidden" id="done">Finished. <a href="/pour-map.html">Open the pour map</a> to check the result, then delete <strong>import-p2.html</strong> from your site so it can't be run again.</p>
+    </div>
+  </div>
+</main>
+
+<script>
+const LEVEL = 'P2';
+const DATA = [{"po":"665 - 3009C","markupDate":"2026-07-28","desc":" Core Pad - 450m3 TRM925242 - 665-3009C","volume":450.0,"color":[1.0,0.0,0.0],"shapes":[[{"x":1023.3,"y":716.1},{"x":1340.4,"y":716.1},{"x":1340.4,"y":319.4},{"x":1101.9,"y":319.4},{"x":1101.9,"y":394.8},{"x":1023.1,"y":394.8}]],"needsCheck":[]},{"po":"665 - 3010C","markupDate":"2026-07-29","desc":" SOG - 80m3 TRM925222 - 665-3010C","volume":80.0,"color":[0.0,0.0,1.0],"shapes":[[{"x":1674.7,"y":1515.2},{"x":1675.7,"y":921.6},{"x":1467.9,"y":922.9},{"x":1464.2,"y":1142.3},{"x":1262.7,"y":1142.3},{"x":795.0,"y":810.1},{"x":833.5,"y":747.6},{"x":780.6,"y":713.9},{"x":725.5,"y":811.7},{"x":676.3,"y":925.3},{"x":1525.7,"y":1519.7},{"x":1656.1,"y":1515.8},{"x":1577.2,"y":1515.8},{"x":1571.6,"y":1515.8},{"x":1571.7,"y":1430.1},{"x":1672.6,"y":1428.6},{"x":1672.6,"y":1515.3}]],"needsCheck":[]},{"po":"665 - 3020C","markupDate":"2026-07-29","desc":" Below Grade - 20m3 TRM965147 - 665-3020C","volume":20.0,"color":[1.0,0.0,0.0],"shapes":[[{"x":1229.0,"y":909.5},{"x":1229.0,"y":929.7},{"x":1412.3,"y":929.6},{"x":1412.3,"y":924.2},{"x":1242.6,"y":920.7},{"x":1242.6,"y":838.7},{"x":1404.4,"y":836.8},{"x":1403.7,"y":831.8},{"x":1242.6,"y":831.8},{"x":1242.6,"y":747.6},{"x":1244.5,"y":748.6},{"x":1246.3,"y":742.4},{"x":1242.7,"y":740.7},{"x":1242.7,"y":737.1},{"x":1218.9,"y":737.4},{"x":1218.9,"y":747.6},{"x":1232.4,"y":747.6},{"x":1232.4,"y":825.1},{"x":1229.0,"y":825.1},{"x":1228.9,"y":845.5},{"x":1231.6,"y":845.2},{"x":1231.9,"y":909.4}]],"needsCheck":[]},{"po":"665 - 3021C","markupDate":"2026-07-31","desc":"Strip footing - 20m3 TRM925442 - 665-3021C","volume":20.0,"color":[1.0,0.0,0.0],"shapes":[[{"x":1031.4,"y":266.0},{"x":1040.2,"y":271.0},{"x":1059.6,"y":237.3},{"x":1242.6,"y":237.3},{"x":1242.6,"y":221.5},{"x":1243.0,"y":218.3},{"x":1422.9,"y":224.6},{"x":1422.9,"y":305.4},{"x":1433.1,"y":304.8},{"x":1433.1,"y":214.7},{"x":1068.3,"y":202.0}]],"needsCheck":[]},{"po":"665 - 3022C","markupDate":"2026-08-04","desc":" SOG infill - 8m3 - TRM925222 - 665-3022C","volume":8.0,"color":[1.0,0.0,0.0],"shapes":[[{"x":1570.0,"y":1428.4},{"x":1571.6,"y":1515.8},{"x":1672.6,"y":1515.8},{"x":1672.6,"y":1428.6}]],"needsCheck":[]},{"po":"665 - 3023C","markupDate":"2026-08-05","desc":" VE North Wall - 10m3 - TRM855252 - 665-3023C","volume":10.0,"color":[0.0,1.0,0.0],"shapes":[[{"x":1242.6,"y":740.9},{"x":1387.5,"y":740.9},{"x":1387.5,"y":747.6},{"x":1242.6,"y":747.6}]],"needsCheck":[]},{"po":"665 - 3027C","markupDate":"2026-08-05","desc":" 'L' pad, column pad and strip - 60m3 - TRM925242 - 665-3027C","volume":60.0,"color":[1.0,0.0,0.0],"shapes":[[{"x":773.6,"y":712.4},{"x":922.6,"y":454.4},{"x":933.6,"y":455.4},{"x":903.6,"y":507.5},{"x":965.7,"y":543.3},{"x":931.9,"y":601.8},{"x":869.9,"y":565.9},{"x":840.3,"y":610.5},{"x":839.8,"y":617.9},{"x":922.3,"y":665.6},{"x":962.8,"y":595.5},{"x":1020.3,"y":628.7},{"x":944.3,"y":760.1},{"x":804.4,"y":679.4},{"x":784.4,"y":713.9}]],"needsCheck":[]},{"po":"665 - 3026C","markupDate":"2026-08-07","desc":" Core Walls - 46m3 - TRM 950142 -665-3026C","volume":46.0,"color":[0.0,0.0,1.0],"shapes":[[{"x":1160.9,"y":477.8},{"x":1160.9,"y":489.1},{"x":1101.4,"y":489.1},{"x":1101.9,"y":610.5},{"x":1160.9,"y":610.5},{"x":1159.7,"y":621.7},{"x":1090.7,"y":621.7},{"x":1090.7,"y":477.8}],[{"x":1191.9,"y":467.5},{"x":1233.2,"y":466.7},{"x":1233.3,"y":476.5},{"x":1208.8,"y":477.2},{"x":1208.8,"y":637.5},{"x":1234.6,"y":637.5},{"x":1234.6,"y":648.7},{"x":1191.9,"y":648.7},{"x":1191.9,"y":610.5},{"x":1203.2,"y":610.5},{"x":1203.2,"y":489.1},{"x":1191.9,"y":489.1}],[{"x":1258.4,"y":466.7},{"x":1272.9,"y":466.7},{"x":1272.9,"y":647.2},{"x":1257.1,"y":648.7},{"x":1257.1,"y":637.5},{"x":1261.0,"y":637.5},{"x":1262.7,"y":479.4},{"x":1257.1,"y":477.8}]],"needsCheck":[]},{"po":"665 - 3029C","markupDate":"2026-08-10","desc":" Ext Wall Shoot - 48m3 - TRM735144 - 665- 3029C","volume":48.0,"color":[1.0,1.0,0.0],"shapes":[[{"x":1212.6,"y":206.3},{"x":1277.0,"y":208.6},{"x":1433.1,"y":214.0},{"x":1433.1,"y":746.9},{"x":1422.1,"y":746.9},{"x":1419.3,"y":740.2},{"x":1425.9,"y":222.2},{"x":1213.6,"y":213.9}]],"needsCheck":[]},{"po":"665 - 3031C","markupDate":"2026-08-11","desc":" P2 VE Wall + colums - 14.5m3 - TRM855252 - 665-3031C","volume":14.5,"color":[0.0,0.5,0.0],"shapes":[[{"x":1242.6,"y":922.9},{"x":1242.6,"y":929.6},{"x":1392.0,"y":929.6},{"x":1401.6,"y":929.3},{"x":1412.3,"y":929.6},{"x":1412.3,"y":922.9}],[{"x":852.9,"y":656.7},{"x":844.3,"y":671.2},{"x":859.0,"y":679.7},{"x":867.4,"y":665.1}],[{"x":923.4,"y":697.4},{"x":915.0,"y":712.0},{"x":929.6,"y":720.3},{"x":936.9,"y":705.4}],[{"x":1176.7,"y":363.7},{"x":1176.7,"y":384.0},{"x":1165.5,"y":384.0},{"x":1165.5,"y":363.7}],[{"x":1271.7,"y":346.3},{"x":1283.0,"y":346.3},{"x":1283.0,"y":366.6},{"x":1271.7,"y":366.6}],[{"x":1110.6,"y":224.7},{"x":1110.3,"y":222.9},{"x":1109.6,"y":221.2},{"x":1108.5,"y":219.8},{"x":1107.0,"y":218.7},{"x":1105.3,"y":218.0},{"x":1103.5,"y":217.8},{"x":1101.7,"y":218.0},{"x":1100.0,"y":218.7},{"x":1098.5,"y":219.8},{"x":1097.4,"y":221.2},{"x":1096.7,"y":222.9},{"x":1096.4,"y":224.7},{"x":1096.7,"y":226.5},{"x":1097.4,"y":228.2},{"x":1098.5,"y":229.6},{"x":1100.0,"y":230.7},{"x":1101.7,"y":231.4},{"x":1103.5,"y":231.6},{"x":1105.3,"y":231.4},{"x":1107.0,"y":230.7},{"x":1108.5,"y":229.6},{"x":1109.6,"y":228.2},{"x":1110.3,"y":226.5}]],"needsCheck":[]},{"po":"665 - 3033C","markupDate":"2026-08-12","desc":" Ex. Wall. - 9.5m3 - TRM855252- 665 - 3033C","volume":9.5,"color":[1.0,0.5,0.0],"shapes":[[{"x":1242.6,"y":831.8},{"x":1399.4,"y":831.8},{"x":1398.1,"y":837.5},{"x":1242.6,"y":838.7}],[{"x":917.9,"y":545.0},{"x":932.6,"y":553.0},{"x":924.6,"y":568.6},{"x":909.5,"y":559.0}],[{"x":972.4,"y":632.3},{"x":983.3,"y":638.6},{"x":976.9,"y":649.7},{"x":966.7,"y":643.1}]],"needsCheck":[]},{"po":"665 - 3032C","markupDate":"2026-08-14","desc":" Ex. Wall. - 40m3 - TRM735144 - 665 - 3032C","volume":40.0,"color":[1.0,0.5,0.0],"shapes":[[{"x":775.4,"y":709.2},{"x":781.4,"y":712.5},{"x":1072.1,"y":208.6},{"x":1184.0,"y":212.8},{"x":1184.0,"y":206.1},{"x":1068.3,"y":202.0}]],"needsCheck":[]},{"po":"665 - 3035C","markupDate":"2026-08-14","desc":" P2Z2 SOG - 38m3 - TRM925242 - 665 - 3035C","volume":38.0,"color":[1.0,0.0,0.5],"shapes":[[{"x":1463.0,"y":1142.3},{"x":1467.9,"y":920.7},{"x":1412.3,"y":920.7},{"x":1409.3,"y":927.2},{"x":1229.0,"y":929.7},{"x":1229.0,"y":845.4},{"x":1057.8,"y":837.8},{"x":1029.8,"y":826.9},{"x":908.1,"y":801.6},{"x":865.8,"y":862.0},{"x":1262.7,"y":1142.3},{"x":1454.1,"y":1142.3}],[{"x":1234.0,"y":503.1},{"x":1237.4,"y":503.1},{"x":1237.4,"y":608.2},{"x":1234.0,"y":608.2}]],"needsCheck":["0.72 sq m"]},{"po":"665 - 3036C","markupDate":"2026-08-14","desc":" P2Z2 SOG Puddle - 4m3 - TRM865242 - 665 - 3036C","volume":4.0,"color":[1.0,0.0,0.0],"shapes":[[{"x":1252.1,"y":918.7},{"x":1251.1,"y":912.2},{"x":1248.1,"y":906.1},{"x":1243.3,"y":900.9},{"x":1237.0,"y":896.9},{"x":1229.8,"y":894.4},{"x":1222.0,"y":893.6},{"x":1214.2,"y":894.4},{"x":1206.9,"y":896.9},{"x":1200.6,"y":900.9},{"x":1195.9,"y":906.1},{"x":1192.8,"y":912.2},{"x":1191.8,"y":918.7},{"x":1192.8,"y":925.2},{"x":1195.9,"y":931.3},{"x":1200.6,"y":936.5},{"x":1206.9,"y":940.5},{"x":1214.2,"y":943.0},{"x":1222.0,"y":943.8},{"x":1229.8,"y":943.0},{"x":1237.0,"y":940.5},{"x":1243.3,"y":936.5},{"x":1248.1,"y":931.3},{"x":1251.1,"y":925.2}]],"needsCheck":[]},{"po":"665 - 3044C","markupDate":"2026-08-25","desc":" SOG - 90m3 - TRM925222 - 665 - 3044C","volume":90.0,"color":[0.0,1.0,0.0],"shapes":[[{"x":781.6,"y":718.7},{"x":1072.1,"y":209.0},{"x":1422.9,"y":224.6},{"x":1422.9,"y":737.4},{"x":1405.5,"y":740.9},{"x":1406.4,"y":922.9},{"x":1229.0,"y":922.9},{"x":1232.4,"y":845.4},{"x":1057.8,"y":837.8},{"x":1018.6,"y":823.9},{"x":908.1,"y":801.6},{"x":921.0,"y":783.3},{"x":845.3,"y":735.6},{"x":833.5,"y":747.6}]],"needsCheck":[]}];
+const DEFAULT_TYPES = ['Footings','Walls','Columns','Slabs on grade','Suspended slab','Blinding'];
+const DEFAULT_LOCS = {
+  'Footings':'Footings','Footings - Crane Pad':'Footings',
+  'Slab On Grade (Interior Parkade)':'Slabs on grade','Slab On Grade (Exterior)':'Slabs on grade',
+  'Walls (Blind Formed / Shotcrete Only)':'Walls','Walls (Excluding Blind Formed / Shotcrete)':'Walls',
+  'Columns':'Columns','Suspended Slab (Parking)':'Suspended slab','Suspended Slab (No Exposure - WP Over)':'Suspended slab',
+  'Blinding - Footing Excavation protection':'Blinding','Curbs/Stairs/Planter Walls (Exterior)':'Walls',
+  'Concrete Topping (Interior)':'Slabs on grade','Concrete Topping (Exterior - non structural)':'Slabs on grade'
+};
+
+let PW = '', cfg = null, smPos = [], existing = [], rows = [];
+const norm = s => String(s || '').replace(/\s+/g, '').toUpperCase();
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const hex = c => '#' + c.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+const authHeaders = () => ({ 'Content-Type': 'application/json', 'x-edit-password': PW });
+
+async function verify(pw) {
+  try {
+    const r = await fetch('/.netlify/functions/verify-edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
+    return r.status;
+  } catch (e) { return 0; }
+}
+
+async function unlock() {
+  const pw = document.getElementById('pw').value;
+  if (!pw) return;
+  const m = document.getElementById('umsg');
+  m.textContent = 'Checking...';
+  const st = await verify(pw);
+  if (st !== 200) { m.textContent = st === 401 ? 'Incorrect password.' : 'Could not check the password (HTTP ' + st + ').'; return; }
+  PW = pw; sessionStorage.setItem('pm-edit-pw', pw);
+  document.getElementById('unlock').classList.add('hidden');
+  document.getElementById('work').classList.remove('hidden');
+  await loadAll();
+}
+
+async function getJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url.split('/').pop() + ' returned HTTP ' + r.status);
+  return r.json();
+}
+
+async function loadAll() {
+  const msg = document.getElementById('msg');
+  msg.className = 'muted'; msg.textContent = 'Reading Smartsheet and the map...';
+  const [c, s, p] = await Promise.allSettled([
+    getJson('/.netlify/functions/get-config'),
+    getJson('/.netlify/functions/sync-concrete'),
+    getJson('/.netlify/functions/load-pours')
+  ]);
+  cfg = (c.status === 'fulfilled' && c.value.config) ? c.value.config : null;
+  smPos = (s.status === 'fulfilled' && s.value.pos) ? s.value.pos : [];
+  existing = (p.status === 'fulfilled' && p.value.pours) ? p.value.pours.filter(x => x.level === LEVEL) : [];
+  const problems = [];
+  if (s.status !== 'fulfilled') problems.push("Couldn't read Smartsheet (" + s.reason.message + "). Dates and costs can't be filled in.");
+  if (p.status !== 'fulfilled') problems.push("Couldn't read the pours already on the map (" + p.reason.message + ").");
+  if (cfg && !cfg.levels.some(l => l.code === LEVEL)) problems.push('Level "' + LEVEL + '" is not in Site setup, so imported pours would not show on the map.');
+  msg.className = 'bad'; msg.textContent = problems.join(' ');
+  buildRows();
+}
+
+function typeFor(po, row) {
+  const types = cfg ? cfg.pourTypes.map(t => t.name) : DEFAULT_TYPES;
+  const locs = cfg ? cfg.locations : DEFAULT_LOCS;
+  if (po) { const loc = (po.mixes && po.mixes[0] && po.mixes[0].location) || ''; return locs[loc] || types[0]; }
+  const d = row.desc.toLowerCase();
+  const pick = re => types.find(t => re.test(t.toLowerCase()));
+  if (/sog|slab/.test(d)) return pick(/slab/) || types[0];
+  if (/wall/.test(d)) return pick(/wall/) || types[0];
+  if (/column/.test(d)) return pick(/column/) || types[0];
+  if (/pad|footing|strip/.test(d)) return pick(/footing/) || types[0];
+  return types[0];
+}
+
+function buildRows() {
+  rows = DATA.map((d, i) => {
+    const po = smPos.find(x => norm(x.po) === norm(d.po)) || null;
+    const old = existing.filter(x => norm(x.po) === norm(d.po));
+    const smVol = po ? (po.mixes || []).reduce((a, m) => a + (Number(m.volume) || 0), 0) : null;
+    return { i, d, po, old, smVol, checked: false };
+  });
+  applyDefaults();
+}
+
+function applyDefaults() {
+  const replace = document.getElementById('replace').checked;
+  rows.forEach(r => { r.checked = !!r.po && (r.old.length === 0 || replace); });
+  renderRows();
+}
+
+function renderRows() {
+  const replace = document.getElementById('replace').checked;
+  document.getElementById('rows').innerHTML = rows.map(r => {
+    const d = r.d, notes = [];
+    let status;
+    if (!r.po) status = '<span class="bad">Not in Smartsheet</span>';
+    else if (r.old.length) status = replace ? '<span class="warn">On the map, will be replaced</span>' : '<span class="warn">Already on the map, skipped</span>';
+    else status = '<span class="ok">Ready</span>';
+    if (r.po && r.po.date && String(r.po.date).slice(0, 10) !== d.markupDate) notes.push('Smartsheet date differs from the markup (' + d.markupDate + ')');
+    if (r.po && r.smVol != null && Math.abs(r.smVol - d.volume) > 0.5) notes.push('Smartsheet volume ' + r.smVol + ' m\u00b3 vs ' + d.volume + ' m\u00b3 on the markup');
+    if (!r.po) notes.push('Would use the markup date and have no cost data. Tick it only if you want it anyway.');
+    if (d.needsCheck && d.needsCheck.length) notes.push('One shape was matched by colour only, so check it on the map');
+    const sm = r.po ? esc(String(r.po.date || '').slice(0, 10)) + ' &middot; ' + r.smVol + ' m\u00b3<br>' + esc(r.po.po) : '&mdash;';
+    return '<tr><td><input type="checkbox" ' + (r.checked ? 'checked ' : '') + 'onchange="rows[' + r.i + '].checked=this.checked"/></td>' +
+      '<td>' + (r.i + 1) + '</td>' +
+      '<td><span class="sw" style="background:' + hex(d.color) + '"></span><strong>' + esc(d.po) + '</strong></td>' +
+      '<td>' + esc(d.markupDate) + ' &middot; ' + d.volume + ' m\u00b3<br><span class="muted">' + esc(d.desc) + '</span></td>' +
+      '<td>' + sm + '</td><td>' + d.shapes.length + '</td>' +
+      '<td>' + status + notes.map(n => '<span class="note">' + esc(n) + '</span>').join('') + '</td></tr>';
+  }).join('');
+  const found = rows.filter(r => r.po).length;
+  document.getElementById('summary').textContent =
+    rows.length + ' pours and ' + DATA.reduce((a, d) => a + d.shapes.length, 0) + ' shapes read from your markup. ' +
+    found + ' of ' + rows.length + ' POs were found in Smartsheet; ' + rows.filter(r => r.old.length).length + (rows.filter(r => r.old.length).length === 1 ? ' is' : ' are') + ' already on the P2 map.';
+  drawPreview();
+}
+
+function drawPreview() {
+  const cv = document.getElementById('preview'), ctx = cv.getContext('2d'), k = cv.width / 2048;
+  const paint = () => {
+    DATA.forEach((d, i) => {
+      const col = hex(d.color);
+      d.shapes.forEach(s => {
+        ctx.beginPath(); s.forEach((q, j) => j ? ctx.lineTo(q.x * k, q.y * k) : ctx.moveTo(q.x * k, q.y * k)); ctx.closePath();
+        ctx.fillStyle = col + '66'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
+      });
+      const big = d.shapes.slice().sort((a, b) => b.length - a.length)[0];
+      const cx = big.reduce((a, q) => a + q.x, 0) / big.length * k, cy = big.reduce((a, q) => a + q.y, 0) / big.length * k;
+      ctx.beginPath(); ctx.arc(cx, cy, 10, 0, 7); ctx.fillStyle = '#222'; ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), cx, cy);
+    });
+  };
+  const img = new Image();
+  img.onload = () => { ctx.clearRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height); paint(); };
+  img.onerror = () => { ctx.clearRect(0, 0, cv.width, cv.height); paint(); };
+  img.src = '/P2_FDN_clean.png';
+}
+
+function buildPour(r, idx, base) {
+  const po = r.po, shapes = r.d.shapes;
+  return {
+    id: 'pour-' + (base + idx),
+    po: po ? po.po : r.d.po,
+    date: (po && po.date) ? po.date : r.d.markupDate,
+    type: typeFor(po, r.d), level: LEVEL, testPo: null,
+    mixes: po ? po.mixes : [], totalCost: po ? po.totalCost : 0,
+    shapes, points: shapes[0],
+    createdAt: new Date().toISOString(), source: 'pour-map'
+  };
+}
+
+async function runImport() {
+  const todo = rows.filter(r => r.checked);
+  const msg = document.getElementById('msg'), btn = document.getElementById('go');
+  if (!todo.length) { msg.className = 'bad'; msg.textContent = 'Nothing is ticked.'; return; }
+  const replace = document.getElementById('replace').checked;
+  const replacing = todo.filter(r => r.old.length && replace).length;
+  if (!confirm('Import ' + todo.length + ' pour' + (todo.length === 1 ? '' : 's') + ' onto Level ' + LEVEL + '?' +
+               (replacing ? '\n\n' + replacing + ' existing pour(s) with the same PO will be deleted and replaced.' : ''))) return;
+  btn.disabled = true; msg.className = 'muted';
+  const base = Date.now();
+  let ok = 0, failed = 0;
+  for (let k = 0; k < todo.length; k++) {
+    const r = todo[k];
+    msg.textContent = 'Importing ' + (k + 1) + ' of ' + todo.length + ' (' + r.d.po + ')...';
+    try {
+      if (r.old.length && replace) {
+        for (const o of r.old) {
+          const dr = await fetch('/.netlify/functions/delete-pour', { method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ id: o.id }) });
+          if (dr.status === 401) throw new Error('The edit password was rejected.');
+          if (!dr.ok) throw new Error('Could not remove the old pour (HTTP ' + dr.status + ').');
+        }
+      }
+      const res = await fetch('/.netlify/functions/save-pour', { method: 'POST', headers: authHeaders(), body: JSON.stringify(buildPour(r, k, base)) });
+      if (res.status === 401) throw new Error('The edit password was rejected.');
+      if (!res.ok) throw new Error('Save failed (HTTP ' + res.status + ').');
+      ok++; r.old = []; r.imported = true;
+    } catch (e) {
+      failed++; msg.className = 'bad'; msg.textContent = r.d.po + ': ' + e.message + ' Stopped.';
+      btn.disabled = false; return;
+    }
+  }
+  rows.forEach(r => { if (r.imported) r.checked = false; });
+  msg.className = failed ? 'bad' : 'ok';
+  msg.textContent = ok + ' pour' + (ok === 1 ? '' : 's') + ' imported' + (failed ? ', ' + failed + ' failed.' : '.');
+  document.getElementById('done').classList.remove('hidden');
+  await loadAll();
+  msg.className = 'ok'; msg.textContent = ok + ' pour' + (ok === 1 ? '' : 's') + ' imported.';
+}
+
+// Reuse the password from the map if this browser tab already has it
+(async () => {
+  const saved = sessionStorage.getItem('pm-edit-pw');
+  if (saved && (await verify(saved)) === 200) { document.getElementById('pw').value = saved; unlock(); }
+})();
+</script>
+</body>
+</html>
