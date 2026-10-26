@@ -134,6 +134,12 @@ canvas{display:block;}
 .cfg-field label.cfg-logo-opt{text-transform:none;letter-spacing:0;font-size:12px;font-weight:400;color:var(--text);margin:0 0 6px;}
 .cfg-logo-opt{display:flex;gap:8px;align-items:center;padding:7px 9px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px;}
 .cfg-logo-opt img{height:26px;max-width:120px;object-fit:contain;background:#fff;}
+.imp-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px;}
+.imp-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:5px 6px;border-bottom:1px solid var(--border);}
+.imp-table td{padding:6px;border-bottom:1px solid var(--border);vertical-align:top;}
+.imp-sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle;}
+.imp-ok{color:#3b6d11;font-weight:700;} .imp-warn{color:#854f0b;font-weight:700;} .imp-bad{color:var(--red);font-weight:700;}
+.imp-note{display:block;font-size:11px;color:#854f0b;margin-top:2px;font-weight:400;}
 </style>
 </head>
 <body class="cfg-loading">
@@ -255,6 +261,10 @@ canvas{display:block;}
       <span class="st-title">&#8593; Upload drawing</span>
       <span class="st-desc">Add or replace the plan for a level</span>
     </button>
+    <button class="st-item" onclick="closeSettings();openImport()">
+      <span class="st-title">&#128230; Import pours</span>
+      <span class="st-desc">Load pours from a marked-up PDF (Bluebeam)</span>
+    </button>
     <button class="st-item" onclick="closeSettings();openAddReport()">
       <span class="st-title">&#129514; Add test report</span>
       <span class="st-desc">Enter a lab report number and its date</span>
@@ -312,6 +322,40 @@ canvas{display:block;}
         <button class="mbtn mbtn-cancel" onclick="closeSiteSetup()">Cancel</button>
         <button class="mbtn mbtn-save" id="cfg-save" onclick="saveSiteSetup()">Save</button>
       </span>
+    </div>
+  </div>
+</div>
+
+<!-- Import pours from a marked-up PDF (edit mode) -->
+<div class="overlay" id="imp-overlay" style="display:none;">
+  <div class="modal" style="max-width:960px;">
+    <h3>&#128230; Import pours from a marked-up PDF</h3>
+    <p class="cfg-help" id="imp-help"></p>
+    <div class="fg">
+      <label>Marked-up PDF</label>
+      <input type="file" id="imp-file" accept="application/pdf,.pdf" onchange="impPickFile(this)" style="background:#fff;"/>
+    </div>
+    <div id="imp-msg" style="font-size:12px;min-height:16px;margin-bottom:6px;"></div>
+    <div id="imp-body" style="display:none;max-height:54vh;overflow-y:auto;padding-right:2px;">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:2px 0 8px;">
+        <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Drawing alignment</span>
+        <select id="imp-align" class="cfg-in" style="flex:none;" onchange="impSetAlign(this.value)">
+          <option value="0.79">The built-in drawing (sheet without its title block)</option>
+          <option value="1">The whole sheet (matches an uploaded drawing)</option>
+        </select>
+        <span class="cfg-help" style="margin:0;">If the shapes don&rsquo;t sit on the right features below, switch this.</span>
+      </div>
+      <canvas id="imp-canvas" width="900" height="759" style="display:block;margin:0 auto;width:auto;max-width:100%;max-height:40vh;border:1px solid var(--border);border-radius:8px;background:#fff;"></canvas>
+      <table class="imp-table">
+        <thead><tr><th></th><th>#</th><th>PO</th><th>From the markup</th><th>From Smartsheet</th><th>Shapes</th><th>Status</th></tr></thead>
+        <tbody id="imp-rows"></tbody>
+      </table>
+      <label class="cfg-help" style="display:block;margin:8px 0 0;"><input type="checkbox" id="imp-replace" onchange="impApplyDefaults()"/>
+        Replace pours already on this level that share a PO with this list (the old one is deleted, the new one added). Other pours are never touched.</label>
+    </div>
+    <div class="modal-actions" style="margin-top:10px;">
+      <button class="mbtn mbtn-cancel" onclick="closeImport()">Close</button>
+      <button class="mbtn mbtn-save" id="imp-go" style="display:none;" onclick="impRun()">Import</button>
     </div>
   </div>
 </div>
@@ -1809,6 +1853,383 @@ async function deleteReport(key) {
       buildPourList();
     }
   } catch (e) {}
+}
+
+// ---- Import pours from a marked-up PDF (edit mode) -----------------------------
+// ---- MARKUP IMPORT START ----
+// Reads a Bluebeam-marked PDF: text callouts ("Aug 5 - description - 60m3 - mix - 665-3027C"),
+// area polygons / circles, and the arrows that tie them together. Everything found is shown
+// for review before anything is saved.
+
+const MK_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+
+async function readMarkupPdf(bytes) {
+  const L = window.PDFLib;
+  const doc = await L.PDFDocument.load(bytes, { ignoreEncryption: true });
+  const page = doc.getPages()[0];
+  if (!page) throw new Error('That PDF has no pages.');
+  if (page.getRotation().angle % 360 !== 0) throw new Error('This PDF page is rotated. Export the markup without rotation and try again.');
+  const mb = page.getMediaBox();
+  const nums = (dict, key) => {
+    const a = dict.lookup(L.PDFName.of(key));
+    if (!a || typeof a.size !== 'function') return null;
+    const out = [];
+    for (let i = 0; i < a.size(); i++) { const n = a.lookup(i); out.push(n && n.asNumber ? n.asNumber() : NaN); }
+    return out;
+  };
+  const text = (dict, key) => { const t = dict.lookup(L.PDFName.of(key)); return t && t.decodeText ? t.decodeText() : ''; };
+  const px = x => x - mb.x, py = y => y - mb.y;
+  const textColor = da => {
+    let m = /([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg/.exec(da || '');
+    if (m) return [+m[1], +m[2], +m[3]].map(v => Math.round(v * 100) / 100);
+    m = /([\d.]+)\s+g\b/.exec(da || '');
+    return m ? [+m[1], +m[1], +m[1]].map(v => Math.round(v * 100) / 100) : null;
+  };
+  const col = a => (a && a.length === 3) ? a.map(v => Math.round(v * 100) / 100) : null;
+
+  const out = { pageW: mb.width, pageH: mb.height, polys: [], calls: [], lines: [], circles: [] };
+  const annots = page.node.Annots();
+  const n = annots ? annots.size() : 0;
+  for (let i = 0; i < n; i++) {
+    const d = annots.lookup(i, L.PDFDict);
+    const st = String(d.get(L.PDFName.of('Subtype')));
+    if (st === '/Polygon') {
+      const v = nums(d, 'Vertices'); if (!v || v.length < 6) continue;
+      const pts = []; for (let k = 0; k + 1 < v.length; k += 2) pts.push([px(v[k]), py(v[k + 1])]);
+      out.polys.push({ id: i, color: col(nums(d, 'C')), area: text(d, 'Contents'), pts });
+    } else if (st === '/FreeText') {
+      const r = nums(d, 'Rect'), cl = nums(d, 'CL');
+      if (!r) continue;
+      out.calls.push({
+        id: i, text: text(d, 'Contents').replace(/\s+/g, ' ').trim(),
+        rect: [px(r[0]), py(r[1]), px(r[2]), py(r[3])],
+        cl: cl && cl.length >= 4 ? cl.map((v, k) => (k % 2 ? py(v) : px(v))) : null,
+        tcolor: textColor(text(d, 'DA'))
+      });
+    } else if (st === '/Line') {
+      const l = nums(d, 'L'); if (!l || l.length < 4) continue;
+      out.lines.push({ id: i, start: [px(l[0]), py(l[1])], end: [px(l[2]), py(l[3])], color: col(nums(d, 'C')) });
+    } else if (st === '/Circle') {
+      const r = nums(d, 'Rect'); if (!r) continue;
+      out.circles.push({ id: i, rect: [px(r[0]), py(r[1]), px(r[2]), py(r[3])], color: col(nums(d, 'C')) });
+    }
+  }
+  return out;
+}
+
+function mkArea(pts) {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; a += x1 * y2 - x2 * y1; }
+  return Math.abs(a) / 2;
+}
+function mkInside(pt, pts) {
+  const [x, y] = pt; let ins = false;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[(i + pts.length - 1) % pts.length];
+    if ((y1 > y) !== (y2 > y) && x < (x2 - x1) * (y - y1) / (y2 - y1 + 1e-12) + x1) ins = !ins;
+  }
+  return ins;
+}
+function mkSegDist(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const t = (dx === 0 && dy === 0) ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+function mkDistToPoly(pt, pts) {
+  if (mkInside(pt, pts)) return 0;
+  let m = Infinity;
+  for (let i = 0; i < pts.length; i++) m = Math.min(m, mkSegDist(pt, pts[i], pts[(i + 1) % pts.length]));
+  return m;
+}
+function mkCirclePoly(r, n = 24) {
+  const cx = (r[0] + r[2]) / 2, cy = (r[1] + r[3]) / 2, rx = (r[2] - r[0]) / 2, ry = (r[3] - r[1]) / 2;
+  return Array.from({ length: n }, (_, k) => [cx + rx * Math.cos(2 * Math.PI * k / n), cy + ry * Math.sin(2 * Math.PI * k / n)]);
+}
+function mkClose(c1, c2) { return !!c1 && !!c2 && c1.every((v, i) => Math.abs(v - c2[i]) < 0.05); }
+function mkRectGap(pt, r) { return Math.hypot(Math.max(r[0] - pt[0], 0, pt[0] - r[2]), Math.max(r[1] - pt[1], 0, pt[1] - r[3])); }
+
+function mkInferDate(mon, day) {            // callouts have no year: use this year, or last year if that lands far in the future
+  const now = new Date();
+  let y = now.getFullYear();
+  if (new Date(Date.UTC(y, mon - 1, day)) - now > 60 * 86400000) y -= 1;
+  const dt = new Date(Date.UTC(y, mon - 1, day));
+  return dt.getUTCMonth() === mon - 1 ? y + '-' + String(mon).padStart(2, '0') + '-' + String(day).padStart(2, '0') : '';
+}
+function mkParseCallout(t) {
+  const d = { markupDate: '', po: '', volume: null, mix: '', desc: '' };
+  let m = /^\s*([A-Za-z]+)\.?\s+(\d{1,2})/.exec(t);
+  if (m && MK_MONTHS[m[1].slice(0, 3).toLowerCase()]) d.markupDate = mkInferDate(MK_MONTHS[m[1].slice(0, 3).toLowerCase()], +m[2]);
+  m = /\b(\d{3,4})\s*-\s*(\d{3,5}[A-Z]?)\b/.exec(t);
+  if (m) d.po = m[1] + ' - ' + m[2];
+  m = /([\d.]+)\s*m3/i.exec(t); if (m) d.volume = parseFloat(m[1]);
+  m = /TRM\s*(\w+)/i.exec(t); if (m) d.mix = ('TRM' + m[1]).toUpperCase();
+  const dash = t.indexOf('-');
+  d.desc = (dash >= 0 ? t.slice(dash + 1) : t).replace(/\s+/g, ' ').trim();
+  return d;
+}
+
+// Which shapes belong to which callout: arrow tips and arrows first, then "callout sits inside the zone",
+// then leftover shapes by colour. Returns one entry per callout that has a PO number.
+function matchMarkup(data) {
+  const shapes = [];
+  data.polys.forEach(p => shapes.push({ id: p.id, kind: 'polygon', color: p.color, pts: p.pts, label: p.area }));
+  data.circles.forEach(c => shapes.push({ id: c.id, kind: 'circle', color: c.color, pts: mkCirclePoly(c.rect), label: 'circle' }));
+  const assign = new Map();
+  const centreOf = c => [(c.rect[0] + c.rect[2]) / 2, (c.rect[1] + c.rect[3]) / 2];
+
+  data.calls.forEach(c => {
+    const targets = [];
+    if (c.cl) targets.push(['arrow tip', [c.cl[0], c.cl[1]]]);
+    data.lines.forEach(ln => { if (mkRectGap(ln.start, c.rect) <= 12) targets.push(['extra arrow', ln.end]); });
+    targets.forEach(([how, pt]) => {
+      let cands = [];
+      shapes.forEach(s => { const d = mkDistToPoly(pt, s.pts); if (d <= 30 && mkClose(s.color, c.tcolor)) cands.push([d, mkArea(s.pts), s]); });
+      if (!cands.length) shapes.forEach(s => { if (mkDistToPoly(pt, s.pts) === 0) cands.push([15, mkArea(s.pts), s]); });
+      if (cands.length) {
+        const top = Math.min(...cands.map(x => x[0]));
+        const best = cands.filter(x => x[0] <= top + 3).sort((a, b) => a[1] - b[1])[0][2];   // overlapping shapes: take the smaller
+        if (!assign.has(best.id)) assign.set(best.id, [c.id, how]);
+      }
+    });
+    if (!targets.length) {
+      const ctr = centreOf(c);
+      const cands = shapes.filter(s => s.kind === 'polygon' && mkClose(s.color, c.tcolor) && mkInside(ctr, s.pts));
+      if (cands.length) {
+        const s = cands.sort((a, b) => mkArea(a.pts) - mkArea(b.pts))[0];
+        if (!assign.has(s.id)) assign.set(s.id, [c.id, 'callout sits inside the zone']);
+      }
+    }
+  });
+  shapes.forEach(s => {                                   // leftovers: nearest callout of the same colour
+    if (assign.has(s.id)) return;
+    const mates = data.calls.filter(c => mkClose(c.tcolor, s.color));
+    if (!mates.length) return;
+    const c = mates.sort((a, b) => mkDistToPoly(centreOf(a), s.pts) - mkDistToPoly(centreOf(b), s.pts))[0];
+    assign.set(s.id, [c.id, 'same colour only (check this one)']);
+  });
+
+  const pours = [];
+  data.calls.forEach(c => {
+    const info = mkParseCallout(c.text);
+    if (!info.po) return;
+    const mine = shapes.filter(s => assign.has(s.id) && assign.get(s.id)[0] === c.id);
+    pours.push(Object.assign({ callout: c.id, label: c.text, color: c.tcolor || [0.5, 0.5, 0.5] }, info, {
+      shapesPdf: mine.map(s => s.pts),
+      needsCheck: mine.filter(s => /check/.test(assign.get(s.id)[1])).map(s => s.label)
+    }));
+  });
+  pours.sort((a, b) => (a.markupDate + a.po).localeCompare(b.markupDate + b.po));
+  return { pours, unmatchedCallouts: data.calls.filter(c => !mkParseCallout(c.text).po).map(c => c.text).filter(Boolean) };
+}
+
+// PDF page points -> the map's drawing space (2048 x 1728, origin top-left).
+// crop = share of the page width the drawing shows (1 = whole page; 0.79 = the built-in drawing without its title block).
+function mkToApp(pts, pageW, pageH, crop) {
+  return pts.map(([x, y]) => ({ x: Math.round(x / (pageW * crop) * 2048 * 10) / 10, y: Math.round((pageH - y) / pageH * 1728 * 10) / 10 }));
+}
+// ---- MARKUP IMPORT END ----
+
+
+async function loadPdfLib() {
+  if (window.PDFLib) return;
+  const load = src => new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed'));
+    document.head.appendChild(s);
+  });
+  try { await load('pdf-lib.min.js'); }
+  catch (e) { await load('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'); }
+  if (!window.PDFLib) throw new Error("Couldn't load the PDF reader.");
+}
+
+let impData = null, impPours = [], impRows = [], impCrop = 0.79;
+const impNorm = s => String(s || '').replace(/\s+/g, '').toUpperCase();
+const impHex = c => '#' + c.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+
+function openImport() {
+  if (!editorMode) return;
+  impData = null; impPours = []; impRows = [];
+  document.getElementById('imp-file').value = '';
+  document.getElementById('imp-body').style.display = 'none';
+  document.getElementById('imp-go').style.display = 'none';
+  impMsg('', true);
+  document.getElementById('imp-help').innerHTML =
+    'Choose a Bluebeam PDF of <strong>' + esc(levelName(currentLevel)) + '</strong> where each pour has a text callout that ends with its PO number ' +
+    '(for example <em>Aug 5 - L pad - 60m3 - 665-3027C</em>), and its area drawn as polygons or circles with arrows to the callout. ' +
+    'The PDF is read in your browser and is not uploaded. Pours are added to <strong>' + esc(levelName(currentLevel)) + '</strong> ' +
+    '(switch level first if that is wrong). The date, mix and cost come from Smartsheet, matched by PO number.';
+  document.getElementById('imp-overlay').style.display = 'flex';
+}
+function closeImport() { document.getElementById('imp-overlay').style.display = 'none'; }
+function impMsg(t, ok) { const m = document.getElementById('imp-msg'); m.style.color = ok ? 'var(--text-muted)' : 'var(--red)'; m.textContent = t; }
+
+async function impPickFile(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  document.getElementById('imp-body').style.display = 'none';
+  document.getElementById('imp-go').style.display = 'none';
+  if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') { impMsg('That is not a PDF.'); return; }
+  if (f.size > 40 * 1024 * 1024) { impMsg('That PDF is over 40 MB.'); return; }
+  impMsg('Reading the markups...', true);
+  try {
+    await loadPdfLib();
+    impData = await readMarkupPdf(new Uint8Array(await f.arrayBuffer()));
+  } catch (e) {
+    impMsg("Couldn't read that PDF: " + (e && e.message ? e.message : e));
+    return;
+  }
+  const res = matchMarkup(impData);
+  impPours = res.pours;
+  if (!impPours.length) {
+    impMsg('No pour callouts with a PO number were found on page 1. Each callout needs text like "Aug 5 - description - 60m3 - 665-3027C" ' +
+           '(' + impData.calls.length + ' text callout' + (impData.calls.length === 1 ? '' : 's') + ' and ' + impData.polys.length + ' polygon' + (impData.polys.length === 1 ? '' : 's') + ' were seen).');
+    return;
+  }
+  if (!smData) { impMsg('Reading Smartsheet...', true); await syncData(); }
+  const lc = levelCfg(currentLevel);
+  impCrop = (lc && lc.fallback && !drawingCache[currentLevel]) ? 0.79 : 1;
+  document.getElementById('imp-align').value = String(impCrop);
+  impBuildRows();
+  const warn = [];
+  if (!smData || !smData.pos) warn.push("Smartsheet couldn't be read, so no dates, mixes or costs can be filled in.");
+  if (res.unmatchedCallouts.length) warn.push(res.unmatchedCallouts.length + ' callout' + (res.unmatchedCallouts.length === 1 ? ' has' : 's have') + ' no PO number and ' + (res.unmatchedCallouts.length === 1 ? 'was' : 'were') + ' ignored.');
+  impMsg(warn.join(' '), !warn.length);
+  document.getElementById('imp-body').style.display = 'block';
+  document.getElementById('imp-go').style.display = '';
+}
+
+function impBuildRows() {
+  const smPos = (smData && smData.pos) || [];
+  impRows = impPours.map((d, i) => {
+    const po = smPos.find(x => impNorm(x.po) === impNorm(d.po)) || null;
+    const old = pours.filter(p => p.level === currentLevel && impNorm(p.po) === impNorm(d.po));
+    const smVol = po ? (po.mixes || []).reduce((a, m) => a + (Number(m.volume) || 0), 0) : null;
+    return { i, d, po, old, smVol, checked: false, shapesApp: [] };
+  });
+  impReshape();
+  impApplyDefaults();
+}
+function impReshape() {
+  impRows.forEach(r => { r.shapesApp = r.d.shapesPdf.map(s => mkToApp(s, impData.pageW, impData.pageH, impCrop)); });
+}
+function impSetAlign(v) { impCrop = parseFloat(v); impReshape(); impRenderRows(); }
+function impApplyDefaults() {
+  const replace = document.getElementById('imp-replace').checked;
+  impRows.forEach(r => { r.checked = !!r.po && r.shapesApp.length > 0 && (r.old.length === 0 || replace); });
+  impRenderRows();
+}
+
+function impRenderRows() {
+  const replace = document.getElementById('imp-replace').checked;
+  document.getElementById('imp-rows').innerHTML = impRows.map(r => {
+    const d = r.d, notes = [];
+    let status;
+    if (!r.shapesApp.length) status = '<span class="imp-bad">No shape found</span>';
+    else if (!r.po) status = '<span class="imp-bad">Not in Smartsheet</span>';
+    else if (r.old.length) status = replace ? '<span class="imp-warn">On the map, will be replaced</span>' : '<span class="imp-warn">Already on the map, skipped</span>';
+    else status = '<span class="imp-ok">Ready</span>';
+    if (r.po && r.po.date && d.markupDate && String(r.po.date).slice(0, 10) !== d.markupDate) notes.push('Smartsheet date differs from the markup');
+    if (r.po && r.smVol != null && d.volume != null && Math.abs(r.smVol - d.volume) > 0.5) notes.push('Smartsheet volume ' + r.smVol + ' m\u00b3 vs ' + d.volume + ' m\u00b3 on the markup');
+    if (!r.po && r.shapesApp.length) notes.push('Would use the markup date and have no cost data. Tick it only if you want it anyway.');
+    if (d.needsCheck.length) notes.push('One shape was matched by colour only, so check it on the map');
+    const sm = r.po ? esc(String(r.po.date || '').slice(0, 10)) + ' &middot; ' + r.smVol + ' m\u00b3' : '&mdash;';
+    const can = r.shapesApp.length > 0;
+    return '<tr><td><input type="checkbox" ' + (r.checked ? 'checked ' : '') + (can ? '' : 'disabled ') + 'onchange="impRows[' + r.i + '].checked=this.checked;impCount()"/></td>' +
+      '<td>' + (r.i + 1) + '</td>' +
+      '<td><span class="imp-sw" style="background:' + impHex(d.color) + '"></span><strong>' + esc(d.po) + '</strong></td>' +
+      '<td>' + esc(d.markupDate) + (d.volume != null ? ' &middot; ' + d.volume + ' m\u00b3' : '') + '<br><span style="color:var(--text-muted)">' + esc(d.desc) + '</span></td>' +
+      '<td>' + sm + '</td><td>' + r.shapesApp.length + '</td>' +
+      '<td>' + status + notes.map(n => '<span class="imp-note">' + esc(n) + '</span>').join('') + '</td></tr>';
+  }).join('');
+  impCount();
+  impDrawPreview();
+}
+function impCount() {
+  const n = impRows.filter(r => r.checked).length;
+  const b = document.getElementById('imp-go');
+  b.textContent = 'Import ' + n + ' pour' + (n === 1 ? '' : 's');
+  b.disabled = n === 0;
+}
+
+function impDrawPreview() {
+  const cv = document.getElementById('imp-canvas'), ctx = cv.getContext('2d'), k = cv.width / 2048;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (bg && bg.complete && bg.naturalWidth > 0) ctx.drawImage(bg, 0, 0, cv.width, cv.height);
+  impRows.forEach((r, i) => {
+    const col = impHex(r.d.color);
+    r.shapesApp.forEach(s => {
+      ctx.beginPath(); s.forEach((q, j) => j ? ctx.lineTo(q.x * k, q.y * k) : ctx.moveTo(q.x * k, q.y * k)); ctx.closePath();
+      ctx.fillStyle = col + '66'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
+    });
+    if (!r.shapesApp.length) return;
+    const big = r.shapesApp.slice().sort((a, b) => b.length - a.length)[0];
+    const cx = big.reduce((a, q) => a + q.x, 0) / big.length * k, cy = big.reduce((a, q) => a + q.y, 0) / big.length * k;
+    ctx.beginPath(); ctx.arc(cx, cy, 10, 0, 7); ctx.fillStyle = '#222'; ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), cx, cy);
+  });
+}
+
+function impGuessType(d) {
+  const types = (siteConfig.pourTypes || []).map(t => t.name), t = d.desc.toLowerCase();
+  const pick = re => types.find(x => re.test(x.toLowerCase()));
+  if (/sog|slab/.test(t)) return pick(/slab/) || defaultType();
+  if (/wall/.test(t)) return pick(/wall/) || defaultType();
+  if (/column/.test(t)) return pick(/column/) || defaultType();
+  if (/pad|footing|strip/.test(t)) return pick(/footing/) || defaultType();
+  return defaultType();
+}
+
+async function impRun() {
+  if (!editorMode) return;
+  const todo = impRows.filter(r => r.checked && r.shapesApp.length);
+  if (!todo.length) return;
+  const replace = document.getElementById('imp-replace').checked;
+  const replacing = todo.filter(r => r.old.length && replace).length;
+  if (!confirm('Import ' + todo.length + ' pour' + (todo.length === 1 ? '' : 's') + ' onto ' + levelName(currentLevel) + '?' +
+               (replacing ? '\n\n' + replacing + ' existing pour(s) with the same PO will be deleted and replaced.' : ''))) return;
+  const btn = document.getElementById('imp-go');
+  btn.disabled = true;
+  const base = Date.now();
+  let ok = 0;
+  for (let k = 0; k < todo.length; k++) {
+    const r = todo[k];
+    impMsg('Importing ' + (k + 1) + ' of ' + todo.length + ' (' + r.d.po + ')...', true);
+    try {
+      if (r.old.length && replace) {
+        for (const o of r.old) {
+          const dr = await fetch('/.netlify/functions/delete-pour', { method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ id: o.id }) });
+          if (dr.status === 401) { closeImport(); handleUnauthorized(); return; }
+          if (!dr.ok) throw new Error('could not remove the old pour (HTTP ' + dr.status + ')');
+          pours = pours.filter(x => x.id !== o.id);
+          try { localStorage.removeItem('pour-' + o.id); } catch (e) {}
+        }
+        r.old = [];
+      }
+      const po = r.po, shapes = r.shapesApp;
+      const pour = {
+        id: 'pour-' + (base + k),
+        po: po ? po.po : r.d.po,
+        date: (po && po.date) ? po.date : r.d.markupDate,
+        type: po ? typeForLocation((po.mixes && po.mixes[0] && po.mixes[0].location) || '') : impGuessType(r.d),
+        level: currentLevel, testPo: null,
+        mixes: po ? po.mixes : [], totalCost: po ? po.totalCost : 0,
+        shapes, points: shapes[0],
+        createdAt: new Date().toISOString(), source: 'pour-map'
+      };
+      const res = await fetch('/.netlify/functions/save-pour', { method: 'POST', headers: authHeaders(), body: JSON.stringify(pour) });
+      if (res.status === 401) { closeImport(); handleUnauthorized(); return; }
+      if (!res.ok) throw new Error('save failed (HTTP ' + res.status + ')');
+      pours.push(pour); r.old = [pour]; r.checked = false; ok++;
+    } catch (e) {
+      impMsg(r.d.po + ': ' + e.message + '. Stopped after ' + ok + ' imported.');
+      btn.disabled = false; selected = null; buildPourList(); render(); impRenderRows();
+      return;
+    }
+  }
+  selected = null;
+  buildPourList(); render(); impRenderRows();
+  impMsg(ok + ' pour' + (ok === 1 ? '' : 's') + ' imported onto ' + levelName(currentLevel) + '. Close this window to see them on the map.', true);
+  setStatus(ok + ' pours imported');
 }
 
 // ---- Comments (viewers and editors can both post; only editors can delete) ----
