@@ -190,6 +190,22 @@ canvas{display:block;}
   </div>
 </div>
 
+<!-- Edit password -->
+<div class="overlay" id="pw-overlay" style="display:none;">
+  <div class="modal" style="max-width:340px;">
+    <h3>&#128274; Unlock edit mode</h3>
+    <div class="fg">
+      <label>Edit password</label>
+      <input type="password" id="pw-input" autocomplete="off" onkeydown="if(event.key==='Enter')submitPassword()"/>
+    </div>
+    <div id="pw-error" style="font-size:12px;color:var(--red);min-height:16px;"></div>
+    <div class="modal-actions">
+      <button class="mbtn mbtn-cancel" onclick="closePasswordModal()">Cancel</button>
+      <button class="mbtn mbtn-save" onclick="submitPassword()">Unlock</button>
+    </div>
+  </div>
+</div>
+
 <!-- Upload drawing overlay -->
 <div class="overlay" id="upload-overlay" style="display:none;">
   <div class="modal">
@@ -364,7 +380,7 @@ async function uploadDrawing() {
 
     const res = await fetch('/.netlify/functions/save-drawing', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify({ level, dataUrl, fileType: file.type })
     });
     if (!res.ok) {
@@ -718,24 +734,38 @@ function ptIn(pt,pts){
 
 // ---- Tools ------------------------------------------------------------------------------------------------------------------------------------------
 
-// ---- Viewer / Editor mode --------------------------------------------------
-let editorMode = true;
+// ---- Viewer / Editor mode (password protected) ----------------------------
+let editorMode = false;
+let editPassword = sessionStorage.getItem('pm-edit-pw') || '';
 
-function toggleMode() {
-  editorMode = !editorMode;
+function authHeaders() {
+  return { 'Content-Type': 'application/json', 'x-edit-password': editPassword };
+}
+
+async function verifyPassword(pw) {
+  try {
+    const res = await fetch('/.netlify/functions/verify-edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    return res.ok;
+  } catch(e) { return false; }
+}
+
+function applyMode() {
   const btn = document.getElementById('mode-toggle');
   const editorTools = document.getElementById('editor-tools');
   const uploadBtn = document.getElementById('upload-btn');
   if (editorMode) {
-    btn.innerHTML = '&#128274; Edit mode';
-    btn.style.background = 'var(--bg)';
-    btn.style.color = 'var(--text-secondary)';
+    btn.innerHTML = '&#128275; Edit mode (click to lock)';
+    btn.style.background = '#faeeda';
+    btn.style.color = '#854f0b';
     editorTools.style.display = 'flex';
     if (uploadBtn) uploadBtn.style.display = '';
     wrap.className = 'canvas-wrap';
   } else {
-    cancelDraw();
-    btn.innerHTML = '&#128065; View mode';
+    btn.innerHTML = '&#128065; View mode (click to edit)';
     btn.style.background = '#eaf3de';
     btn.style.color = '#3b6d11';
     editorTools.style.display = 'none';
@@ -743,6 +773,58 @@ function toggleMode() {
     wrap.className = 'canvas-wrap mode-select';
   }
   setStatus(editorMode ? 'Editor mode -- draw and log pours' : 'Viewer mode -- read only');
+  buildPourList();
+}
+
+async function toggleMode() {
+  if (editorMode) {
+    // Lock: back to viewer, forget the password
+    cancelDraw();
+    editorMode = false;
+    editPassword = '';
+    sessionStorage.removeItem('pm-edit-pw');
+    applyMode();
+    return;
+  }
+  // Unlock: reuse password from this session if we have one
+  if (editPassword && await verifyPassword(editPassword)) {
+    editorMode = true;
+    applyMode();
+    return;
+  }
+  document.getElementById('pw-input').value = '';
+  document.getElementById('pw-error').textContent = '';
+  document.getElementById('pw-overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('pw-input').focus(), 50);
+}
+
+function closePasswordModal() {
+  document.getElementById('pw-overlay').style.display = 'none';
+}
+
+async function submitPassword() {
+  const pw = document.getElementById('pw-input').value;
+  if (!pw) return;
+  const errEl = document.getElementById('pw-error');
+  errEl.textContent = 'Checking...';
+  if (await verifyPassword(pw)) {
+    editPassword = pw;
+    sessionStorage.setItem('pm-edit-pw', pw);
+    editorMode = true;
+    closePasswordModal();
+    applyMode();
+  } else {
+    errEl.textContent = 'Incorrect password.';
+  }
+}
+
+// Called when the server rejects a write (password changed or expired)
+function handleUnauthorized() {
+  editorMode = false;
+  editPassword = '';
+  sessionStorage.removeItem('pm-edit-pw');
+  applyMode();
+  alert('Edit password was rejected. Switched back to view mode.');
 }
 
 function setTool(t){
@@ -1033,7 +1115,7 @@ async function deleteSelected(){
 
 // ---- Persistence ------------------------------------------------------------------------------------------------------------------------------
 async function persistPour(pour){
-  try{await fetch('/.netlify/functions/save-pour',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pour)});}catch(e){}
+  try{const r=await fetch('/.netlify/functions/save-pour',{method:'POST',headers:authHeaders(),body:JSON.stringify(pour)});if(r.status===401)handleUnauthorized();}catch(e){}
   try{localStorage.setItem('pour-'+pour.id,JSON.stringify(pour));}catch(e){}
 }
 async function loadPours(){
@@ -1047,7 +1129,7 @@ async function loadPours(){
   buildPourList();
 }
 async function deletePour(id){
-  try{await fetch('/.netlify/functions/delete-pour',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});}catch(e){}
+  try{const r=await fetch('/.netlify/functions/delete-pour',{method:'DELETE',headers:authHeaders(),body:JSON.stringify({id})});if(r.status===401)handleUnauthorized();}catch(e){}
   try{localStorage.removeItem('pour-'+id);}catch(e){}
 }
 
@@ -1066,7 +1148,7 @@ async function syncData(){
     render();
   }catch(e){el.textContent='Sync failed: '+e.message;}
 }
-window.addEventListener('load',()=>setTimeout(syncData,600));
+window.addEventListener('load',()=>{applyMode();setTimeout(syncData,600);});
 </script>
 </body>
 </html>
