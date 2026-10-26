@@ -225,7 +225,7 @@ exports.handler = async function (event) {
       level: code, estimateMapped: !!ESTIMATE[levelKey(code)] || ZERO_ESTIMATE_LEVELS.has(levelKey(code)),
       cats: {}, pendingVolume: 0
     });
-    const catEntry = (e, cat) => e.cats[cat] || (e.cats[cat] = { category: cat, estimateVolume: 0, actualVolume: 0, actualCost: 0 });
+    const catEntry = (e, cat) => e.cats[cat] || (e.cats[cat] = { category: cat, estimateVolume: 0, actualVolume: 0, actualCost: 0, pendingVolume: 0, pendingCost: 0 });
     for (const [k, cats] of Object.entries(ESTIMATE)) {
       const e = levelEntry(keyToCode(k));
       for (const [cat, v] of Object.entries(cats)) if (v > 0) catEntry(e, cat).estimateVolume = v;
@@ -236,13 +236,21 @@ exports.handler = async function (event) {
       c.actualVolume += a.actualVolume;
       c.actualCost += a.actualCost;
     }
-    for (const pa of Object.values(pendAgg)) levelEntry(pa.level).pendingVolume += pa.volume;
+    for (const pa of Object.values(pendAgg)) {
+      const e = levelEntry(pa.level);
+      e.pendingVolume += pa.volume;                       // logged but not yet marked complete
+      const c = catEntry(e, pa.category);
+      c.pendingVolume += pa.volume;
+      c.pendingCost += pa.cost;
+    }
     const levels = Object.values(levelMap).map((e) => {
       const cats = Object.values(e.cats).map((c) => ({
         category: c.category,
         estimateVolume: round(c.estimateVolume),
         actualVolume: round(c.actualVolume),
         actualCost: round(c.actualCost),
+        pendingVolume: round(c.pendingVolume || 0),
+        pendingCost: round(c.pendingCost || 0),
         estimateCost: c.category === "Unmapped - review" ? 0 : round(c.estimateVolume * rateFor(c.category))
       })).sort((x, y) => Math.max(y.estimateVolume, y.actualVolume) - Math.max(x.estimateVolume, x.actualVolume));
       return {
