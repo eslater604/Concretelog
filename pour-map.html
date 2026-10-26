@@ -181,6 +181,7 @@ canvas{display:block;}
 </header>
 
 <div id="level-banner" style="display:none;padding:5px 20px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border);"></div>
+<div id="level-note" style="display:none;padding:5px 20px;font-size:12px;color:#185fa5;background:#eaf2fb;border-bottom:1px solid #cfe0f5;"></div>
 
 <div class="toolbar">
   <button class="tbtn" id="mode-toggle" onclick="toggleMode()" style="font-weight:700;">&#128274; Edit mode</button>
@@ -621,13 +622,14 @@ let LOCATION_TO_TYPE = {
 
 // ---- Site settings (names, logo, levels, pour types, locations) ----------------------------
 // Built-in defaults = how this site looked before settings existed. Saved settings replace them.
+const P1A_NOTE = 'The volumes for Level P1a are factored into the Level P1 volume counts.';
 const DEFAULT_CONFIG = {
   version: 1,
   branding: { company: 'Marcon Construction Ltd.', project: '701 Kingsway', mapTitle: 'Pour Map', dashboardTitle: 'Concrete Dashboard',
               primary: '#B3261E', accent: '#E1601C', logoMode: 'default', logoVersion: '' },
   levels: [{ code: 'P2', name: 'Level P2', dash: 'P2', fallback: 'P2_FDN_clean.png' },
            { code: 'P1', name: 'Level P1', dash: 'P1' },
-           { code: 'P1a', name: 'Level P1a', dash: 'P1' }]
+           { code: 'P1a', name: 'Level P1a', dash: 'P1', note: P1A_NOTE }]
           .concat(Array.from({ length: 25 }, (_, i) => ({ code: String(i + 1), name: 'Level ' + (i + 1), dash: 'L' + (i + 1) }))),
   pourTypes: Object.entries(TYPE_COLORS).map(([name, color]) => ({ name, color, fill: /slab/i.test(name) ? 'hatch' : 'solid' })),
   locations: Object.assign({}, LOCATION_TO_TYPE)
@@ -681,6 +683,8 @@ function mergeConfig(c) {   // saved settings, with any gaps filled from the def
   const out = cfgClone(DEFAULT_CONFIG);
   if (c && c.branding) out.branding = Object.assign(out.branding, c.branding);
   if (c && Array.isArray(c.levels) && c.levels.length) out.levels = c.levels;
+  // settings saved before levels had notes: P1a gets the standard note (the log and estimate count it with P1)
+  out.levels = out.levels.map(l => ('note' in l) ? l : Object.assign({}, l, { note: l.code === 'P1a' ? P1A_NOTE : '' }));
   if (c && Array.isArray(c.pourTypes) && c.pourTypes.length) out.pourTypes = c.pourTypes;
   out.pourTypes = out.pourTypes.map(t => Object.assign({ fill: /slab/i.test(t.name) ? 'hatch' : 'solid' }, t));   // older saved settings have no fill style
   if (c && c.locations && typeof c.locations === 'object') out.locations = c.locations;
@@ -737,6 +741,7 @@ function applyConfig() {
   rebuildPours();
   buildPourList();
   updateLevelBanner();
+  updateLevelNote();
   render();
 }
 setTimeout(() => document.body.classList.remove('cfg-loading'), 2500);   // never leave the header hidden
@@ -809,10 +814,12 @@ function cfgLevelsHtml() {
       '<input class="cfg-in" style="max-width:80px;" maxlength="8" placeholder="Code" value="' + esc(l.code) + '" oninput="cfgLevelSet(' + i + ',\'code\',this.value)"/>' +
       '<input class="cfg-in" maxlength="50" placeholder="Display name" value="' + esc(l.name) + '" oninput="cfgLevelSet(' + i + ',\'name\',this.value)"/>' +
       '<input class="cfg-in" style="max-width:90px;" maxlength="8" placeholder="Dashboard" value="' + esc(l.dash || '') + '" oninput="cfgLevelSet(' + i + ',\'dash\',this.value)"/>' +
+      '<input class="cfg-in" style="flex:1.5;" maxlength="200" placeholder="Note shown on this level\'s map (optional)" value="' + esc(l.note || '') + '" oninput="cfgLevelSet(' + i + ',\'note\',this.value)"/>' +
       '<button class="cm-del" onclick="cfgLevelDel(' + i + ')">Delete</button></div>').join('');
   return '<p class="cfg-help"><strong>Code</strong> is what pours and drawings are filed under (letters/digits, up to 8). <strong>Display name</strong> is what people see. ' +
-    '<strong>Dashboard</strong> is the code the dashboard uses for the same level, which is needed for the level-complete banner; leave it blank if it is the same as the code.</p>' +
-    '<div class="cfg-head"><span style="width:62px;"></span><span style="width:80px;">Code</span><span style="flex:1;">Display name</span><span style="width:90px;">Dashboard</span><span style="width:52px;"></span></div>' +
+    '<strong>Dashboard</strong> is the code the dashboard uses for the same level, which is needed for the level-complete banner; leave it blank if it is the same as the code. ' +
+    '<strong>Note</strong> is an optional message shown above that level\'s map.</p>' +
+    '<div class="cfg-head"><span style="width:62px;"></span><span style="width:80px;">Code</span><span style="flex:1;">Display name</span><span style="width:90px;">Dashboard</span><span style="flex:1.5;">Note on the map</span><span style="width:52px;"></span></div>' +
     rows +
     '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">' +
       '<button class="tbtn" onclick="cfgLevelAdd()">+ Add level</button>' +
@@ -836,7 +843,7 @@ function cfgLevelDel(i) {
   if (n && !confirm('"' + l.name + '" has ' + n + ' drawn pour area' + (n === 1 ? '' : 's') + '. They stay saved but won\'t show on the map unless a level with the same code exists. Delete anyway?')) return;
   cfgDraft.levels.splice(i, 1); renderSetup();
 }
-function cfgLevelAdd() { cfgDraft.levels.push({ code: '', name: '', dash: '' }); renderSetup(); }
+function cfgLevelAdd() { cfgDraft.levels.push({ code: '', name: '', dash: '', note: '' }); renderSetup(); }
 function cfgLevelsNumbered() {
   const n = Math.max(1, Math.min(60, parseInt(document.getElementById('cfg-num').value, 10) || 0));
   for (let k = 1; k <= n; k++)
@@ -2373,6 +2380,15 @@ function dashboardLevelKeys(level) {
   return keys;
 }
 
+function updateLevelNote() {
+  const el = document.getElementById('level-note');
+  if (!el) return;
+  const l = levelCfg(currentLevel);
+  const note = l && l.note ? String(l.note).trim() : '';
+  el.textContent = note ? '\u2139 ' + note : '';
+  el.style.display = note ? 'block' : 'none';
+}
+
 function updateLevelBanner() {
   const el = document.getElementById('level-banner');
   if (!el) return;
@@ -2409,6 +2425,7 @@ function switchLevel(){
   loadDrawingForLevel(currentLevel);
   buildPourList();
   updateLevelBanner();
+  updateLevelNote();
 }
 
 // ---- Pours: the Smartsheet PO list + where each one is on the map -------------------------------
