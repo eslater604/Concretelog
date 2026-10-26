@@ -45,7 +45,7 @@ function sanitize(c) {
     if (!name) throw new Error("Every pour type needs a name.");
     if (tnames.has(name.toLowerCase())) throw new Error('Pour type "' + name + '" is used twice.');
     tnames.add(name.toLowerCase());
-    return { name, color: HEX.test((t && t.color) || "") ? t.color : "#999999" };
+    return { name, color: HEX.test((t && t.color) || "") ? t.color : "#999999", fill: t && t.fill === "hatch" ? "hatch" : "solid" };
   });
   const typeSet = new Set(pourTypes.map(t => t.name));
 
