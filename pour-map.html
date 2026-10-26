@@ -108,6 +108,17 @@ canvas{display:block;}
 .rp-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--bg);border-radius:7px;padding:6px 8px;margin-bottom:5px;font-size:12px;}
 .rp-item span{color:var(--text-muted);margin-left:4px;}
 .rp-note{font-size:10px;color:var(--text-muted);margin-top:1px;}
+.sc-item{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12px;}
+.sc-item.sc-saved{background:#eaf3de;border-color:#cfe3b5;}
+.sc-head{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px;}
+.sc-file{font-weight:700;word-break:break-all;}
+.sc-grid{display:grid;grid-template-columns:140px 1fr 140px;gap:6px;}
+.sc-grid select,.sc-grid input{padding:5px 6px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:#fff;width:100%;box-sizing:border-box;font-family:inherit;}
+.sc-info{font-size:11px;color:var(--text-secondary);margin-top:5px;}
+.sc-note{font-size:11px;color:#854f0b;margin-top:3px;}
+.sc-err{font-size:11px;color:var(--red);margin-top:3px;}
+.rp-link{color:var(--brand-red);text-decoration:underline;font-size:12px;}
+.rp-actions{display:flex;gap:10px;align-items:center;}
 </style>
 </head>
 <body>
@@ -274,23 +285,31 @@ canvas{display:block;}
   </div>
 </div>
 
-<!-- Add test report -->
+<!-- Add test reports (PDF upload) -->
 <div class="overlay" id="ar-overlay" style="display:none;">
-  <div class="modal" style="max-width:400px;">
-    <h3>&#129514; Add test report</h3>
+  <div class="modal" style="max-width:560px;">
+    <h3>&#129514; Add test reports</h3>
     <div class="fg">
-      <label>Report number</label>
-      <input type="text" id="ar-number" maxlength="40" autocomplete="off" placeholder="e.g. LAB-1042" onkeydown="if(event.key==='Enter')submitReport()"/>
+      <label>Lab report PDFs (placement records, strength reports)</label>
+      <input type="file" id="ar-files" accept="application/pdf,.pdf" multiple onchange="scanSelectedReports()" style="background:#fff;"/>
     </div>
-    <div class="fg">
-      <label>Date (matched to pours poured that day)</label>
-      <input type="date" id="ar-date" onkeydown="if(event.key==='Enter')submitReport()"/>
+    <div style="font-size:11px;color:var(--text-muted);margin:-4px 0 8px;">
+      The report number and date are read from each PDF. Check them, then save. Reports attach to every pour with the same date.
     </div>
+    <div id="ar-review"></div>
     <div id="ar-msg" style="font-size:12px;min-height:16px;"></div>
     <div class="modal-actions" style="margin-top:6px;">
       <button class="mbtn mbtn-cancel" onclick="closeAddReport()">Close</button>
-      <button class="mbtn mbtn-save" id="ar-add" onclick="submitReport()">Add report</button>
+      <button class="mbtn mbtn-save" id="ar-save" style="display:none;" onclick="saveScannedReports()">Save reports</button>
     </div>
+    <details style="margin-top:12px;">
+      <summary style="font-size:12px;cursor:pointer;color:var(--text-secondary);">Enter a report manually (no PDF)</summary>
+      <div style="display:grid;grid-template-columns:1fr 150px auto;gap:6px;margin-top:8px;align-items:center;">
+        <input type="text" id="ar-m-number" maxlength="40" autocomplete="off" placeholder="Report number" class="cm-name" style="margin-top:0;" onkeydown="if(event.key==='Enter')submitManualReport()"/>
+        <input type="date" id="ar-m-date" class="cm-name" style="margin-top:0;" onkeydown="if(event.key==='Enter')submitManualReport()"/>
+        <button class="tbtn" id="ar-m-add" onclick="submitManualReport()">Add</button>
+      </div>
+    </details>
     <div class="cm-title" style="margin-top:14px;">Reports added</div>
     <div id="ar-list" style="max-height:220px;overflow-y:auto;"></div>
   </div>
@@ -1071,20 +1090,179 @@ function clearLastPoint(){if(currentPts.length>0){currentPts.pop();render();}}
 function cancelDraw(){currentPts=[];redrawingId=null;render();['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');setStatus('Cancelled');}
 function setStatus(m){document.getElementById('status-bar').textContent=m;}
 // ---- Lab testing reports, matched to pours by date -----------------------------
-// Empty until a batch of reports is loaded. Each entry: { number: "R-1234", date: "2026-08-05" }
+// Each entry is a saved report: { key, kind, number, date, ageDays, mpa, pctSpec, hasFile, ... }
 let testReports = [];
+
+// ---- REPORT PARSER START ----
+// Reads lab report PDFs (EXL placement records and strength reports) from the
+// text lines PDF.js returns. Everything it finds is shown for review before saving.
+const MONTHS_ABBR = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+
+function isoDate(y, m, d) {
+  y = +y; m = +m; d = +d;
+  if (y < 100) y += 2000;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+
+function parseReportDate(s) {
+  s = String(s || '').trim();
+  let m = s.match(/([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/);          // Jul 31, 2026
+  if (m && MONTHS_ABBR[m[1].slice(0, 3).toLowerCase()])
+    return isoDate(m[3], MONTHS_ABBR[m[1].slice(0, 3).toLowerCase()], m[2]);
+  m = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);                              // 2026-07-31
+  if (m) return isoDate(m[1], m[2], m[3]);
+  m = s.match(/\b(\d{1,2})-([A-Za-z]{3})[A-Za-z]*-(\d{2,4})\b/);           // 4-Aug-26
+  if (m && MONTHS_ABBR[m[2].toLowerCase()]) return isoDate(m[3], MONTHS_ABBR[m[2].toLowerCase()], m[1]);
+  return null;
+}
+
+// Group PDF.js text items into rows (same baseline), left to right
+function groupLines(items) {
+  items = items.slice().sort((a, b) => (b.y - a.y) || (a.x - b.x));
+  const lines = [];
+  items.forEach(it => {
+    const ln = lines.find(l => Math.abs(l.y - it.y) < 4);
+    if (ln) ln.items.push(it); else lines.push({ y: it.y, items: [it] });
+  });
+  lines.forEach(l => l.items.sort((a, b) => a.x - b.x));
+  lines.sort((a, b) => b.y - a.y);
+  return lines;
+}
+
+function reportLinesText(lines) {
+  return lines.map(l => l.items.map(i => i.s).join(' ')).join('\n');
+}
+
+// The value that follows a label on the same row ("Date Cast:  Jul 31, 2026")
+function valueAfterLabel(lines, labelRe) {
+  for (const ln of lines) {
+    for (let i = 0; i < ln.items.length; i++) {
+      const m = ln.items[i].s.match(labelRe);
+      if (!m) continue;
+      if (m[1] && m[1].trim()) return m[1].trim();
+      if (ln.items[i + 1]) return ln.items[i + 1].s;
+    }
+  }
+  return null;
+}
+
+// Specimen rows of a strength report: age tested, strength and % of spec when a result exists
+function parseStrengthRows(lines) {
+  const rows = [];
+  for (const ln of lines) {
+    const it = ln.items.map(i => i.s);
+    const iType = it.findIndex((s, k) => /^[A-Z]$/.test(s) && /^(Cylinder|Cube|Beam|Prism)/i.test(it[k + 1] || ''));
+    if (iType < 0) continue;
+    const iDate = it.findIndex(s => /^[A-Za-z]{3}\s+\d{1,2}$/.test(s));
+    const iPct = it.findIndex(s => /^\d{1,3}%$/.test(s));
+    const age = (iDate >= 0 && /^\d{1,3}$/.test(it[iDate + 1] || '')) ? +it[iDate + 1] : null;
+    const row = { specimen: it[iType], age, mpa: null, pct: null };
+    if (iPct >= 0) {
+      row.pct = parseInt(it[iPct], 10);
+      const prev = parseFloat(it[iPct - 1]);   // the number just before % of spec (average, or corrected if single)
+      if (isFinite(prev)) row.mpa = prev;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function parseReportLines(lines, fileName) {
+  const text = reportLinesText(lines);
+  const fn = String(fileName || '');
+  const out = { kind: 'other', number: '', date: '', setNo: '', mix: '', location: '', jobNo: '',
+                ageDays: null, mpa: null, pctSpec: null, notes: [] };
+
+  if (/Concrete Strength Report/i.test(text)) out.kind = 'strength';
+  else if (/Concrete Placement Record/i.test(text)) out.kind = 'placement';
+
+  // Wording shared by both report types
+  let job = (valueAfterLabel(lines, /^(?:JOB #|Project No\.?:?)\s*(.*)$/i) || '').trim();
+  if (!/^\d{2}-\d{4,6}-\d{2,4}$/.test(job)) { const m = text.match(/\b\d{2}-\d{4,6}-\d{2,4}\b/); job = m ? m[0] : ''; }
+  out.jobNo = job;
+
+  const mixRaw = (valueAfterLabel(lines, /^(?:CONCRETE MIX ID|Mix No\.?:?)\s*(.*)$/i) || '').trim();
+  out.mix = /^TRM[A-Z0-9]+$/i.test(mixRaw) ? mixRaw.toUpperCase()
+          : ((text.match(/\bTRM[A-Z0-9]+\b/i) || [''])[0]).toUpperCase();
+
+  for (const ln of lines) {
+    const hit = ln.items.find(i => /^Level:\s*\S/.test(i.s));
+    if (hit) { out.location = hit.s; break; }
+  }
+
+  if (out.kind === 'placement') {
+    out.date = parseReportDate(valueAfterLabel(lines, /^DATE$/)) || '';
+    const n = text.match(/Concrete Placement Record\s+(\d{1,5})\b/) || text.match(/Report[ _](\d{1,5})\b/) || fn.match(/Report[ _](\d{1,5})/i);
+    out.number = n ? n[1] : '';
+  }
+
+  if (out.kind === 'strength') {
+    out.date = parseReportDate(valueAfterLabel(lines, /^Date Cast:?\s*(.*)$/i)) || '';
+    const sv = (valueAfterLabel(lines, /^Set No\.?:?\s*(.*)$/i) || '').trim();
+    out.number = /^\d{1,5}$/.test(sv) ? sv : ((fn.match(/CSR[ _-]?(\d{1,5})/i) || [])[1] || '');
+    out.setNo = out.number;
+    const done = parseStrengthRows(lines).filter(r => r.pct != null && r.age != null);
+    if (done.length) {
+      const maxAge = Math.max(...done.map(r => r.age));
+      const last = done.filter(r => r.age === maxAge).pop();
+      out.ageDays = maxAge; out.mpa = last.mpa; out.pctSpec = last.pct;
+    } else {
+      const a = fn.match(/(\d{1,3})\s*[_ -]?day/i);
+      out.ageDays = a ? +a[1] : null;
+    }
+  }
+
+  // Fallbacks when the date label wasn't found
+  if (!out.date) {
+    const m = text.match(/[A-Za-z]{3,9}\.?\s+\d{1,2},\s+\d{4}/);
+    out.date = (m && parseReportDate(m[0])) || '';
+  }
+  if (!out.date) {
+    const m = fn.match(/_(\d{2})(\d{2})(\d{2})(?:\D|$)/);   // ..._260731.pdf
+    const d = m ? isoDate(m[1], m[2], m[3]) : null;
+    if (d) { out.date = d; out.notes.push('Date was taken from the file name -- please check it.'); }
+  }
+
+  if (out.kind === 'other') out.notes.push("This doesn't look like a placement record or strength report. Choose the type and fill in the number and date.");
+  if (!out.number) out.notes.push("Couldn't find the report number -- please enter it.");
+  if (!out.date) out.notes.push("Couldn't find the date -- please enter it.");
+  return out;
+}
+
+function reportLabel(r) {
+  if (r.kind === 'placement') return 'Placement record #' + r.number;
+  if (r.kind === 'strength') {
+    const age = r.ageDays ? r.ageDays + '-day' : 'pending';
+    const res = (r.mpa != null && r.pctSpec != null) ? ' ' + r.mpa + ' MPa (' + r.pctSpec + '%)' : '';
+    return 'Strength set #' + r.number + ' \u00b7 ' + age + res;
+  }
+  return String(r.number);
+}
+// ---- REPORT PARSER END ----
+
 
 function reportsForPour(p) {
   const d = String(p.date || '').slice(0, 10);
   if (!d) return [];
-  const nums = testReports.filter(r => String(r.date).slice(0, 10) === d).map(r => String(r.number));
-  return [...new Set(nums)];   // two reports on the same date -> both numbers
+  const order = r => (r.kind === 'placement' ? 0 : r.kind === 'strength' ? 1 : 2);
+  return testReports
+    .filter(r => String(r.date).slice(0, 10) === d)
+    .sort((a, b) => order(a) - order(b) || (a.ageDays || 0) - (b.ageDays || 0));
 }
 
 function reportLine(p) {
-  const nums = reportsForPour(p);
-  const value = nums.length ? esc(nums.join(', ')) : '<span style="color:var(--text-muted)">N/A</span>';
-  return '<div class="prow"><span>Testing report</span><span style="text-align:right;max-width:170px;">' + value + '</span></div>';
+  const list = reportsForPour(p);
+  if (!list.length)
+    return '<div class="prow"><span>Testing reports</span><span style="color:var(--text-muted)">N/A</span></div>';
+  const items = list.map(r => {
+    const label = esc(reportLabel(r));
+    return (r.hasFile && /^[\w-]+$/.test(r.key || ''))
+      ? '<a class="rp-link" target="_blank" rel="noopener" href="/.netlify/functions/get-report-file?key=' + encodeURIComponent(r.key) + '">' + label + '</a>'
+      : label;
+  }).join('<br>');
+  return '<div class="prow" style="align-items:flex-start;"><span>Testing reports</span><span style="text-align:right;max-width:190px;">' + items + '</span></div>';
 }
 
 // ---- Settings menu and test reports (edit mode) ----------------------------------
@@ -1124,16 +1302,165 @@ function openUploadDrawing() {
   document.getElementById('upload-overlay').style.display = 'flex';
 }
 
+async function ensurePdfJs() {
+  if (window.pdfjsLib) return;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// Text of page 1 of a PDF, as rows of text pieces (see the parser above)
+async function pdfTextLines(file) {
+  await ensurePdfJs();
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const page = await pdf.getPage(1);
+  const tc = await page.getTextContent();
+  const items = tc.items.filter(i => i.str && i.str.trim())
+    .map(i => ({ s: i.str.trim(), x: i.transform[4], y: i.transform[5], w: i.width || 0 }));
+  return groupLines(items);
+}
+
+let pendingScans = [];   // files read but not saved yet
+
 function openAddReport() {
   if (!editorMode) return;
-  document.getElementById('ar-number').value = '';
-  document.getElementById('ar-date').value = todayLocal();
   document.getElementById('ar-msg').textContent = '';
+  document.getElementById('ar-m-number').value = '';
+  document.getElementById('ar-m-date').value = todayLocal();
+  renderScanReview();
   renderReportList();
   document.getElementById('ar-overlay').style.display = 'flex';
-  setTimeout(() => document.getElementById('ar-number').focus(), 50);
 }
-function closeAddReport() { document.getElementById('ar-overlay').style.display = 'none'; }
+function closeAddReport() {
+  document.getElementById('ar-overlay').style.display = 'none';
+  pendingScans = pendingScans.filter(s => s.state !== 'saved');
+  renderScanReview();
+}
+
+function kindName(k) {
+  return k === 'placement' ? 'Placement record' : k === 'strength' ? 'Strength report' : k === 'manual' ? 'Manual entry' : 'Other report';
+}
+
+async function scanSelectedReports() {
+  const input = document.getElementById('ar-files');
+  const files = Array.from(input.files || []);
+  input.value = '';   // so the same files can be picked again later
+  if (!files.length) return;
+  const msg = document.getElementById('ar-msg');
+  msg.style.color = 'var(--text-muted)';
+  msg.textContent = 'Reading ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '...';
+  for (const f of files) {
+    const rec = {
+      id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      file: f, fileName: f.name, kind: 'other', number: '', date: '', setNo: '', mix: '', location: '',
+      jobNo: '', ageDays: null, mpa: null, pctSpec: null, notes: [], state: 'ready', msg: ''
+    };
+    if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') {
+      rec.state = 'error'; rec.msg = 'This is not a PDF.';
+    } else if (f.size > 3 * 1024 * 1024) {
+      rec.state = 'error'; rec.msg = 'This PDF is over 3 MB.';
+    } else {
+      try {
+        Object.assign(rec, parseReportLines(await pdfTextLines(f), f.name));
+      } catch (e) {
+        rec.notes.push("Couldn't read text from this PDF (it may be a scan). Choose the type and enter the number and date.");
+      }
+    }
+    pendingScans.push(rec);
+  }
+  msg.textContent = '';
+  renderScanReview();
+}
+
+function scanById(id) { return pendingScans.find(s => s.id === id); }
+function setScan(id, field, value) { const s = scanById(id); if (s) s[field] = value; }
+function removeScan(id) { pendingScans = pendingScans.filter(s => s.id !== id); renderScanReview(); }
+
+function renderScanReview() {
+  const el = document.getElementById('ar-review');
+  const btn = document.getElementById('ar-save');
+  if (!el) return;
+  el.innerHTML = pendingScans.map(s => {
+    const head = '<div class="sc-head"><span class="sc-file">' + esc(s.fileName) + '</span>' +
+      (s.state === 'saved' ? '' : '<button class="cm-del" onclick="removeScan(\'' + s.id + '\')">Remove</button>') + '</div>';
+    if (s.state === 'saved')
+      return '<div class="sc-item sc-saved">' + head + '<div>&#10003; Saved: ' + esc(s.savedLabel || '') + '</div></div>';
+    if (s.state === 'error')
+      return '<div class="sc-item">' + head + '<div class="sc-err">' + esc(s.msg) + '</div></div>';
+    const opt = (v, t) => '<option value="' + v + '"' + (s.kind === v ? ' selected' : '') + '>' + t + '</option>';
+    const detail = [
+      s.location,
+      s.mix,
+      (s.kind === 'strength' && s.ageDays) ? (s.ageDays + '-day' + ((s.mpa != null && s.pctSpec != null) ? ': ' + s.mpa + ' MPa (' + s.pctSpec + '%)' : '')) : ''
+    ].filter(Boolean).map(esc).join(' &middot; ');
+    return '<div class="sc-item">' + head +
+      '<div class="sc-grid">' +
+        '<select onchange="setScan(\'' + s.id + '\',\'kind\',this.value)">' +
+          opt('placement', 'Placement record') + opt('strength', 'Strength report') + opt('other', 'Other report') + '</select>' +
+        '<input type="text" maxlength="40" placeholder="Report number" value="' + esc(s.number) + '" oninput="setScan(\'' + s.id + '\',\'number\',this.value)"/>' +
+        '<input type="date" value="' + esc(s.date) + '" onchange="setScan(\'' + s.id + '\',\'date\',this.value)"/>' +
+      '</div>' +
+      (detail ? '<div class="sc-info">' + detail + '</div>' : '') +
+      s.notes.map(n => '<div class="sc-note">' + esc(n) + '</div>').join('') +
+      (s.msg ? '<div class="sc-err">' + esc(s.msg) + '</div>' : '') +
+    '</div>';
+  }).join('');
+  const n = pendingScans.filter(s => s.state === 'ready').length;
+  if (btn) { btn.style.display = n ? '' : 'none'; btn.textContent = 'Save ' + n + ' report' + (n === 1 ? '' : 's'); }
+}
+
+async function saveScannedReports() {
+  if (!editorMode) return;
+  const btn = document.getElementById('ar-save');
+  const msg = document.getElementById('ar-msg');
+  const todo = pendingScans.filter(s => s.state === 'ready');
+  const incomplete = todo.filter(s => !String(s.number).trim() || !/^\d{4}-\d{2}-\d{2}$/.test(s.date));
+  if (incomplete.length) {
+    msg.style.color = 'var(--red)';
+    msg.textContent = 'Fill in the report number and date for every file first.';
+    return;
+  }
+  btn.disabled = true;
+  msg.style.color = 'var(--text-muted)';
+  msg.textContent = 'Saving...';
+  let saved = 0, failed = 0;
+  for (const s of todo) {
+    try {
+      const b64 = await fileToBase64(s.file);
+      const res = await fetch('/.netlify/functions/save-report', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({
+          kind: s.kind, number: String(s.number).trim(), date: s.date, setNo: s.setNo, mix: s.mix,
+          location: s.location, jobNo: s.jobNo, ageDays: s.ageDays, mpa: s.mpa, pctSpec: s.pctSpec,
+          fileName: s.fileName, fileBase64: b64
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) { btn.disabled = false; closeAddReport(); handleUnauthorized(); return; }
+      if (res.ok) {
+        s.state = 'saved'; s.savedLabel = reportLabel(data.report) + ' \u00b7 ' + data.report.date;
+        testReports.push(data.report); saved++;
+      } else {
+        s.msg = data.error || ('Could not save (HTTP ' + res.status + ').'); failed++;   // stays editable to fix and retry
+      }
+    } catch (e) {
+      s.msg = 'Could not reach the server.'; failed++;
+    }
+  }
+  sortReports();
+  renderScanReview();
+  renderReportList();
+  buildPourList();
+  btn.disabled = false;
+  msg.style.color = failed ? 'var(--red)' : '#3b6d11';
+  msg.textContent = (saved ? saved + ' saved. ' : '') + (failed ? failed + ' need attention (see above).' : '');
+}
 
 function renderReportList() {
   const el = document.getElementById('ar-list');
@@ -1142,18 +1469,20 @@ function renderReportList() {
   el.innerHTML = testReports.map(r => {
     const d = String(r.date).slice(0, 10);
     const n = pours.filter(p => String(p.date || '').slice(0, 10) === d).length;
-    const note = n ? '&rarr; attached to ' + n + ' pour' + (n === 1 ? '' : 's') : 'no logged pour on this date yet';
-    const del = /^[\w-]+$/.test(r.key || '') ? '<button class="cm-del" onclick="deleteReport(\'' + r.key + '\')">Delete</button>' : '';
-    return '<div class="rp-item"><div><strong>' + esc(r.number) + '</strong><span>' + esc(d) + '</span><div class="rp-note">' + note + '</div></div>' + del + '</div>';
+    const note = kindName(r.kind) + ' &middot; ' + (n ? 'attached to ' + n + ' pour' + (n === 1 ? '' : 's') : 'no logged pour on this date yet');
+    const okKey = /^[\w-]+$/.test(r.key || '');
+    const open = (r.hasFile && okKey) ? '<a class="rp-link" target="_blank" rel="noopener" href="/.netlify/functions/get-report-file?key=' + encodeURIComponent(r.key) + '">Open</a>' : '';
+    const del = okKey ? '<button class="cm-del" onclick="deleteReport(\'' + r.key + '\')">Delete</button>' : '';
+    return '<div class="rp-item"><div><strong>' + esc(reportLabel(r)) + '</strong><span>' + esc(d) + '</span><div class="rp-note">' + note + '</div></div><div class="rp-actions">' + open + del + '</div></div>';
   }).join('');
 }
 
-async function submitReport() {
+async function submitManualReport() {
   if (!editorMode) return;
   const msg = document.getElementById('ar-msg');
-  const numEl = document.getElementById('ar-number');
-  const dateEl = document.getElementById('ar-date');
-  const btn = document.getElementById('ar-add');
+  const numEl = document.getElementById('ar-m-number');
+  const dateEl = document.getElementById('ar-m-date');
+  const btn = document.getElementById('ar-m-add');
   const number = numEl.value.trim(), date = dateEl.value;
   msg.style.color = 'var(--red)';
   if (!number) { msg.textContent = 'Enter a report number.'; return; }
@@ -1163,10 +1492,10 @@ async function submitReport() {
   msg.textContent = 'Saving...';
   try {
     const res = await fetch('/.netlify/functions/save-report', {
-      method: 'POST', headers: authHeaders(), body: JSON.stringify({ number, date })
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ kind: 'manual', number, date })
     });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401) { closeAddReport(); handleUnauthorized(); btn.disabled = false; return; }
+    if (res.status === 401) { btn.disabled = false; closeAddReport(); handleUnauthorized(); return; }
     if (!res.ok) {
       msg.style.color = 'var(--red)';
       msg.textContent = data.error || ('Could not save (HTTP ' + res.status + ').');
@@ -1178,7 +1507,6 @@ async function submitReport() {
       msg.textContent = 'Added ' + data.report.number + ' for ' + data.report.date + '.';
       renderReportList();
       buildPourList();
-      numEl.focus();
     }
   } catch (e) {
     msg.style.color = 'var(--red)';
@@ -1189,7 +1517,7 @@ async function submitReport() {
 
 async function deleteReport(key) {
   if (!editorMode) return;
-  if (!confirm('Delete this test report?')) return;
+  if (!confirm('Delete this test report (and its PDF)?')) return;
   try {
     const res = await fetch('/.netlify/functions/delete-report', {
       method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ key })
