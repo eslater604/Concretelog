@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Marcon -- 701 Kingsway Pour Map</title>
+<title id="page-title">Marcon -- 701 Kingsway Pour Map</title>
 <style>
 :root {
   --brand-red:#B3261E; --brand-red-light:#C5534F; --accent:#E1601C;
@@ -119,19 +119,33 @@ canvas{display:block;}
 .sc-err{font-size:11px;color:var(--red);margin-top:3px;}
 .rp-link{color:var(--brand-red);text-decoration:underline;font-size:12px;}
 .rp-actions{display:flex;gap:10px;align-items:center;}
+.cfg-loading .logo-badge,.cfg-loading .header-text{visibility:hidden;}
+.logo-text{font-size:15px;font-weight:800;font-style:italic;color:var(--brand-red);white-space:nowrap;}
+.cfg-tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;}
+.cfg-tab{border:1px solid var(--border);background:var(--bg);border-radius:999px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;color:var(--text-secondary);}
+.cfg-tab.on{background:var(--brand-red);color:#fff;border-color:var(--brand-red);}
+.cfg-help{font-size:11px;color:var(--text-muted);margin:0 0 8px;line-height:1.4;}
+.cfg-row{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
+.cfg-in{flex:1;min-width:0;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:inherit;}
+.cfg-head{display:flex;gap:6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:700;margin:0 0 4px;}
+.cfg-mini{border:1px solid var(--border);background:var(--bg);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;}
+.cfg-field{margin-bottom:10px;}
+.cfg-field label{display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;}
+.cfg-field label.cfg-logo-opt{text-transform:none;letter-spacing:0;font-size:12px;font-weight:400;color:var(--text);margin:0 0 6px;}
+.cfg-logo-opt{display:flex;gap:8px;align-items:center;padding:7px 9px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px;}
+.cfg-logo-opt img{height:26px;max-width:120px;object-fit:contain;background:#fff;}
 </style>
 </head>
-<body>
+<body class="cfg-loading">
 <header>
   <div class="header-left">
-    <div class="logo-badge">
-      <img src="marcon-logo.png" alt="Marcon"
-        onerror="this.parentElement.innerHTML='<span style=\'font-size:15px;font-weight:800;font-style:italic;color:#EC2422\'>MARCON</span>'"/>
+    <div class="logo-badge" id="logo-badge">
+      <img id="site-logo" src="marcon-logo.png" alt="Marcon" onerror="logoFailed(this)"/>
     </div>
     <div class="header-text">
-      <div class="eyebrow"><span class="dot"></span>Marcon Construction Ltd.</div>
-      <h1>701 Kingsway -- Pour Map</h1>
-      <p id="level-label">Level P2 / Foundation</p>
+      <div class="eyebrow"><span class="dot"></span><span id="hdr-company">Marcon Construction Ltd.</span></div>
+      <h1 id="hdr-title">701 Kingsway -- Pour Map</h1>
+      <p id="level-label">Level P2</p>
     </div>
   </div>
   <div class="header-actions">
@@ -156,36 +170,7 @@ canvas{display:block;}
     <button class="tbtn" id="settings-btn" onclick="openSettings()" title="Drawings, password and test reports">&#9881; Settings</button>
     <div class="tsep"></div>
   </div>
-  <select class="tsel" id="level-sel" onchange="switchLevel()">
-        <option value="P2">P2</option>
-        <option value="P1">P1</option>
-        <option value="P1a">P1a</option>
-        <option value="1">Level 1</option>
-        <option value="2">Level 2</option>
-        <option value="3">Level 3</option>
-        <option value="4">Level 4</option>
-        <option value="5">Level 5</option>
-        <option value="6">Level 6</option>
-        <option value="7">Level 7</option>
-        <option value="8">Level 8</option>
-        <option value="9">Level 9</option>
-        <option value="10">Level 10</option>
-        <option value="11">Level 11</option>
-        <option value="12">Level 12</option>
-        <option value="13">Level 13</option>
-        <option value="14">Level 14</option>
-        <option value="15">Level 15</option>
-        <option value="16">Level 16</option>
-        <option value="17">Level 17</option>
-        <option value="18">Level 18</option>
-        <option value="19">Level 19</option>
-        <option value="20">Level 20</option>
-        <option value="21">Level 21</option>
-        <option value="22">Level 22</option>
-        <option value="23">Level 23</option>
-        <option value="24">Level 24</option>
-        <option value="25">Level 25</option>
-  </select>
+  <select class="tsel" id="level-sel" onchange="switchLevel()"></select>
   <div class="tsep"></div>
   <button class="tbtn" onclick="zoomIn()">&#43;</button>
   <button class="tbtn" onclick="zoomOut()">&#8722;</button>
@@ -196,12 +181,7 @@ canvas{display:block;}
 
 <div class="legend">
   <strong style="font-size:11px;color:var(--text);">Pour type:</strong>
-  <div class="li"><span class="ls" style="background:#d4725a;"></span>Footings</div>
-  <div class="li"><span class="ls" style="background:#d4a85a;"></span>Walls</div>
-  <div class="li"><span class="ls" style="background:#5a9ed4;"></span>Columns</div>
-  <div class="li"><span class="ls" style="background:#6dc48a;"></span>SOG</div>
-  <div class="li"><span class="ls" style="background:#9a7ed4;"></span>Susp. slab</div>
-  <div class="li"><span class="ls" style="background:#c4b87e;"></span>Blinding</div>
+  <span id="legend-types" style="display:contents;"></span>
   <div class="tsep"></div>
   <div class="li"><span class="ls" style="background:var(--green);border-radius:50%;width:10px;height:10px;"></span>On track</div>
   <div class="li"><span class="ls" style="background:var(--amber);border-radius:50%;width:10px;height:10px;"></span>Near est.</div>
@@ -267,6 +247,10 @@ canvas{display:block;}
 <div class="overlay" id="st-overlay" style="display:none;">
   <div class="modal" style="max-width:360px;">
     <h3>&#9881; Settings</h3>
+    <button class="st-item" onclick="closeSettings();openSiteSetup()">
+      <span class="st-title">&#127970; Site setup</span>
+      <span class="st-desc">Names, logo, levels, pour types and locations</span>
+    </button>
     <button class="st-item" onclick="closeSettings();openUploadDrawing()">
       <span class="st-title">&#8593; Upload drawing</span>
       <span class="st-desc">Add or replace the plan for a level</span>
@@ -315,6 +299,23 @@ canvas{display:block;}
   </div>
 </div>
 
+<!-- Site setup (edit mode) -->
+<div class="overlay" id="cfg-overlay" style="display:none;">
+  <div class="modal" style="max-width:700px;">
+    <h3>&#127970; Site setup</h3>
+    <div id="cfg-tabs" class="cfg-tabs"></div>
+    <div id="cfg-body" style="max-height:50vh;overflow-y:auto;padding-right:2px;"></div>
+    <div id="cfg-msg" style="font-size:12px;min-height:16px;margin-top:8px;"></div>
+    <div class="modal-actions" style="justify-content:space-between;">
+      <button class="mbtn mbtn-cancel" style="color:var(--red);" onclick="cfgStartBlank()">Start from blank</button>
+      <span style="display:flex;gap:8px;">
+        <button class="mbtn mbtn-cancel" onclick="closeSiteSetup()">Cancel</button>
+        <button class="mbtn mbtn-save" id="cfg-save" onclick="saveSiteSetup()">Save</button>
+      </span>
+    </div>
+  </div>
+</div>
+
 <!-- Upload drawing overlay -->
 <div class="overlay" id="upload-overlay" style="display:none;">
   <div class="modal">
@@ -325,36 +326,7 @@ canvas{display:block;}
     </p>
     <div class="fg">
       <label>Level</label>
-      <select id="upload-level">
-        <option value="P2">P2</option>
-        <option value="P1">P1</option>
-        <option value="P1a">P1a</option>
-        <option value="1">1</option>
-        <option value="2">2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5</option>
-        <option value="6">6</option>
-        <option value="7">7</option>
-        <option value="8">8</option>
-        <option value="9">9</option>
-        <option value="10">10</option>
-        <option value="11">11</option>
-        <option value="12">12</option>
-        <option value="13">13</option>
-        <option value="14">14</option>
-        <option value="15">15</option>
-        <option value="16">16</option>
-        <option value="17">17</option>
-        <option value="18">18</option>
-        <option value="19">19</option>
-        <option value="20">20</option>
-        <option value="21">21</option>
-        <option value="22">22</option>
-        <option value="23">23</option>
-        <option value="24">24</option>
-        <option value="25">25</option>
-      </select>
+      <select id="upload-level"></select>
     </div>
     <div class="fg">
       <label>Drawing file (PDF or image)</label>
@@ -415,8 +387,9 @@ async function loadDrawingForLevel(level) {
     }
   } catch(e) {}
   // No uploaded drawing -- use fallback for P2, blank for others
-  if (level === 'P2') {
-    setBg(FALLBACK_DRAWING);
+  const fb = (levelCfg(level) || {}).fallback;
+  if (fb) {
+    setBg(fb);
     updateDrawingBadge(level, null);
   } else {
     setBg(null);
@@ -438,11 +411,11 @@ function setBg(src) {
 function updateDrawingBadge(level, uploadedAt) {
   const badge = document.getElementById('drawing-badge');
   if (uploadedAt) {
-    badge.textContent = `Drawing: Level ${level} · uploaded ${new Date(uploadedAt).toLocaleDateString()}`;
+    badge.textContent = `Drawing: ${levelName(level)} · uploaded ${new Date(uploadedAt).toLocaleDateString()}`;
     badge.style.background = 'var(--green-bg)';
     badge.style.color = '#3b6d11';
   } else {
-    badge.textContent = level === 'P2' ? `Drawing: Level ${level} · default` : `No drawing uploaded for Level ${level}`;
+    badge.textContent = (levelCfg(level) || {}).fallback ? `Drawing: ${levelName(level)} · default` : `No drawing uploaded for ${levelName(level)}`;
     badge.style.background = 'var(--border)';
     badge.style.color = 'var(--text-muted)';
   }
@@ -497,7 +470,7 @@ async function uploadDrawing() {
       throw new Error(err.error || `HTTP ${res.status}`);
     }
     drawingCache[level] = { dataUrl, fileType: file.type };
-    status.textContent = `✓ Drawing for Level ${level} saved (${sizeKB}KB).`;
+    status.textContent = `✓ Drawing for ${levelName(level)} saved (${sizeKB}KB).`;
     if (level === currentLevel) { await loadDrawingFromData(dataUrl, file.type); updateDrawingBadge(level, new Date().toISOString()); }
     setTimeout(() => { document.getElementById('upload-overlay').style.display = 'none'; }, 1200);
   } catch(e) {
@@ -596,11 +569,11 @@ async function pdfToDataUrl(file) {
   }
   return dataUrl;
 }
-const TYPE_COLORS = {
+let TYPE_COLORS = {
   'Footings':'#d4725a','Walls':'#d4a85a','Columns':'#5a9ed4',
   'Slabs on grade':'#6dc48a','Suspended slab':'#9a7ed4','Blinding':'#c4b87e',
 };
-const LOCATION_TO_TYPE = {
+let LOCATION_TO_TYPE = {
   'Footings':'Footings','Footings - Crane Pad':'Footings',
   'Slab On Grade (Interior Parkade)':'Slabs on grade','Slab On Grade (Exterior)':'Slabs on grade',
   'Walls (Blind Formed / Shotcrete Only)':'Walls','Walls (Excluding Blind Formed / Shotcrete)':'Walls',
@@ -610,6 +583,317 @@ const LOCATION_TO_TYPE = {
   'Curbs/Stairs/Planter Walls (Exterior)':'Walls',
   'Concrete Topping (Interior)':'Slabs on grade','Concrete Topping (Exterior - non structural)':'Slabs on grade',
 };
+
+
+// ---- Site settings (names, logo, levels, pour types, locations) ----------------------------
+// Built-in defaults = how this site looked before settings existed. Saved settings replace them.
+const DEFAULT_CONFIG = {
+  version: 1,
+  branding: { company: 'Marcon Construction Ltd.', project: '701 Kingsway', mapTitle: 'Pour Map', dashboardTitle: 'Concrete Dashboard',
+              primary: '#B3261E', accent: '#E1601C', logoMode: 'default', logoVersion: '' },
+  levels: [{ code: 'P2', name: 'Level P2', dash: 'P2', fallback: 'P2_FDN_clean.png' },
+           { code: 'P1', name: 'Level P1', dash: 'P1' },
+           { code: 'P1a', name: 'Level P1a', dash: 'P1' }]
+          .concat(Array.from({ length: 25 }, (_, i) => ({ code: String(i + 1), name: 'Level ' + (i + 1), dash: 'L' + (i + 1) }))),
+  pourTypes: Object.entries(TYPE_COLORS).map(([name, color]) => ({ name, color })),
+  locations: Object.assign({}, LOCATION_TO_TYPE)
+};
+const BLANK_CONFIG = {
+  version: 1,
+  branding: { company: 'Your Company', project: 'Your Project', mapTitle: 'Pour Map', dashboardTitle: 'Concrete Dashboard',
+              primary: '#2F5D8A', accent: '#E1A21C', logoMode: 'text', logoVersion: '' },
+  levels: [{ code: '1', name: 'Level 1', dash: 'L1' }],
+  pourTypes: [{ name: 'Footings', color: '#d4725a' }, { name: 'Walls', color: '#d4a85a' },
+              { name: 'Columns', color: '#5a9ed4' }, { name: 'Slabs', color: '#6dc48a' }],
+  locations: {}
+};
+let siteConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+
+function cfgClone(o) { return JSON.parse(JSON.stringify(o)); }
+function levelCfg(code) { return (siteConfig.levels || []).find(l => l.code === code) || null; }
+function levelName(code) { const l = levelCfg(code); return l ? l.name : 'Level ' + code; }
+function defaultType() { return ((siteConfig.pourTypes || [])[0] || {}).name || 'Pour'; }
+function typeForLocation(loc) { return LOCATION_TO_TYPE[loc] || defaultType(); }
+
+function mixWithWhite(hex, t) {
+  const n = parseInt(String(hex).slice(1), 16), ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  return '#' + ch.map(v => Math.round(v + (255 - v) * t).toString(16).padStart(2, '0')).join('');
+}
+
+function mergeConfig(c) {   // saved settings, with any gaps filled from the defaults
+  const out = cfgClone(DEFAULT_CONFIG);
+  if (c && c.branding) out.branding = Object.assign(out.branding, c.branding);
+  if (c && Array.isArray(c.levels) && c.levels.length) out.levels = c.levels;
+  if (c && Array.isArray(c.pourTypes) && c.pourTypes.length) out.pourTypes = c.pourTypes;
+  if (c && c.locations && typeof c.locations === 'object') out.locations = c.locations;
+  return out;
+}
+
+async function loadConfig() {
+  try {
+    const res = await fetch('/.netlify/functions/get-config');
+    if (res.ok) { const d = await res.json(); if (d && d.config) siteConfig = mergeConfig(d.config); }
+  } catch (e) { /* defaults stay */ }
+  applyConfig();
+}
+
+function logoFailed(img) {
+  if (!img.dataset.tried) { img.dataset.tried = '1'; img.src = 'marcon-logo.png'; return; }
+  document.getElementById('logo-badge').innerHTML = '<span class="logo-text">' + esc(siteConfig.branding.company) + '</span>';
+}
+
+function setLogo() {
+  const b = siteConfig.branding, box = document.getElementById('logo-badge');
+  if (b.logoMode === 'text') { box.innerHTML = '<span class="logo-text">' + esc(b.company) + '</span>'; return; }
+  const src = b.logoMode === 'custom' ? '/.netlify/functions/get-logo?v=' + encodeURIComponent(b.logoVersion || '') : 'marcon-logo.png';
+  box.innerHTML = '<img id="site-logo" alt="' + esc(b.company) + '" onerror="logoFailed(this)"/>';
+  const img = document.getElementById('site-logo');
+  if (b.logoMode !== 'custom') img.dataset.tried = '1';   // the default file has no further fallback image
+  img.src = src;
+}
+
+function applyConfig() {
+  const b = siteConfig.branding, root = document.documentElement.style;
+  root.setProperty('--brand-red', b.primary);
+  root.setProperty('--brand-red-light', mixWithWhite(b.primary, 0.25));
+  root.setProperty('--accent', b.accent);
+  document.title = b.company + ' -- ' + b.project + ' ' + b.mapTitle;
+  document.getElementById('hdr-company').textContent = b.company;
+  document.getElementById('hdr-title').textContent = b.project + ' -- ' + b.mapTitle;
+  setLogo();
+
+  TYPE_COLORS = {};
+  siteConfig.pourTypes.forEach(t => { TYPE_COLORS[t.name] = t.color; });
+  LOCATION_TO_TYPE = Object.assign({}, siteConfig.locations);
+  document.getElementById('legend-types').innerHTML = siteConfig.pourTypes.map(t =>
+    '<div class="li"><span class="ls" style="background:' + esc(t.color) + ';"></span>' + esc(t.name) + '</div>').join('');
+
+  const opts = siteConfig.levels.map(l => '<option value="' + esc(l.code) + '">' + esc(l.name) + '</option>').join('');
+  const prevLevel = currentLevel;
+  if (!levelCfg(currentLevel)) currentLevel = siteConfig.levels[0].code;
+  ['level-sel', 'upload-level'].forEach(id => { const sel = document.getElementById(id); sel.innerHTML = opts; sel.value = currentLevel; });
+  document.getElementById('level-label').textContent = levelName(currentLevel);
+
+  document.body.classList.remove('cfg-loading');
+  if (currentLevel !== prevLevel) { selected = null; loadDrawingForLevel(currentLevel); }   // the level being viewed was removed
+  buildPourList();
+  updateLevelBanner();
+  render();
+}
+setTimeout(() => document.body.classList.remove('cfg-loading'), 2500);   // never leave the header hidden
+
+// ---- Site setup screen (edit mode) ---------------------------------------------------------
+let cfgDraft = null, cfgTab = 'branding', cfgLogoData = null;
+
+function openSiteSetup() {
+  if (!editorMode) return;
+  cfgDraft = cfgClone(siteConfig);
+  cfgDraft.locList = Object.entries(cfgDraft.locations).map(([name, type]) => ({ name, type }));
+  cfgLogoData = null; cfgTab = 'branding';
+  document.getElementById('cfg-msg').textContent = '';
+  renderSetup();
+  document.getElementById('cfg-overlay').style.display = 'flex';
+}
+function closeSiteSetup() { document.getElementById('cfg-overlay').style.display = 'none'; cfgDraft = null; }
+function cfgMsg(t, ok) { const m = document.getElementById('cfg-msg'); m.style.color = ok ? '#3b6d11' : 'var(--red)'; m.textContent = t; }
+
+function renderSetup() {
+  const tabs = [['branding', 'Branding'], ['levels', 'Levels'], ['types', 'Pour types'], ['locations', 'Locations']];
+  document.getElementById('cfg-tabs').innerHTML = tabs.map(([k, t]) =>
+    '<button class="cfg-tab' + (cfgTab === k ? ' on' : '') + '" onclick="cfgGoTab(\'' + k + '\')">' + t + '</button>').join('');
+  const body = { branding: cfgBrandingHtml, levels: cfgLevelsHtml, types: cfgTypesHtml, locations: cfgLocationsHtml }[cfgTab]();
+  document.getElementById('cfg-body').innerHTML = body;
+}
+function cfgGoTab(k) { cfgTab = k; cfgMsg('', true); renderSetup(); }
+
+// -- Branding
+function cfgBrandingHtml() {
+  const b = cfgDraft.branding;
+  const inp = (label, key, max, ph) => '<div class="cfg-field"><label>' + label + '</label><input class="cfg-in" style="width:100%;box-sizing:border-box;" maxlength="' + max +
+    '" placeholder="' + esc(ph || '') + '" value="' + esc(b[key]) + '" oninput="cfgSet(\'' + key + '\',this.value)"/></div>';
+  const customSrc = cfgLogoData || ('/.netlify/functions/get-logo?v=' + encodeURIComponent(b.logoVersion || ''));
+  const opt = (mode, title, inner) => '<label class="cfg-logo-opt"><input type="radio" name="logomode" ' + (b.logoMode === mode ? 'checked ' : '') +
+    'onchange="cfgSet(\'logoMode\',\'' + mode + '\')"/><span style="flex:1;">' + title + '</span>' + inner + '</label>';
+  return '<p class="cfg-help">These appear in the header of this page, and the browser tab.</p>' +
+    inp('Company name', 'company', 80, 'e.g. Acme Builders') +
+    inp('Project name', 'project', 80, 'e.g. Harbour Tower') +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' + inp('Map page title', 'mapTitle', 40, 'Pour Map') + inp('Dashboard page title (used when the dashboard is connected)', 'dashboardTitle', 40, 'Concrete Dashboard') + '</div>' +
+    '<div style="display:flex;gap:18px;margin-bottom:12px;">' +
+      '<div class="cfg-field"><label>Main colour</label><input type="color" value="' + esc(b.primary) + '" oninput="cfgSet(\'primary\',this.value)"/></div>' +
+      '<div class="cfg-field"><label>Accent colour</label><input type="color" value="' + esc(b.accent) + '" oninput="cfgSet(\'accent\',this.value)"/></div></div>' +
+    '<div class="cfg-field"><label>Logo</label>' +
+      opt('default', 'The Marcon logo (the file in this app)', '<img src="marcon-logo.png" alt=""/>') +
+      opt('custom', 'My own logo <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onchange="cfgPickLogo(this)" style="font-size:11px;"/>',
+          (cfgLogoData || b.logoVersion) ? '<img src="' + esc(customSrc) + '" alt=""/>' : '') +
+      opt('text', 'No logo, show the company name as text', '<span class="logo-text">' + esc(b.company) + '</span>') +
+    '</div><p class="cfg-help">Logo files: PNG, JPEG, GIF or WebP, up to 250 KB.</p>';
+}
+function cfgSet(key, val) {
+  cfgDraft.branding[key] = val;
+  if (key === 'logoMode') renderSetup();
+}
+function cfgPickLogo(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  if (!/^image\/(png|jpeg|gif|webp)$/.test(f.type)) { cfgMsg('Use a PNG, JPEG, GIF or WebP image.'); return; }
+  if (f.size > 250 * 1024) { cfgMsg('That logo is over 250 KB. Use a smaller image.'); return; }
+  const r = new FileReader();
+  r.onload = () => { cfgLogoData = r.result; cfgDraft.branding.logoMode = 'custom'; cfgMsg('', true); renderSetup(); };
+  r.readAsDataURL(f);
+}
+
+// -- Levels
+function cfgLevelsHtml() {
+  const rows = cfgDraft.levels.map((l, i) =>
+    '<div class="cfg-row">' +
+      '<button class="cfg-mini" onclick="cfgLevelMove(' + i + ',-1)">&#8593;</button><button class="cfg-mini" onclick="cfgLevelMove(' + i + ',1)">&#8595;</button>' +
+      '<input class="cfg-in" style="max-width:80px;" maxlength="8" placeholder="Code" value="' + esc(l.code) + '" oninput="cfgLevelSet(' + i + ',\'code\',this.value)"/>' +
+      '<input class="cfg-in" maxlength="50" placeholder="Display name" value="' + esc(l.name) + '" oninput="cfgLevelSet(' + i + ',\'name\',this.value)"/>' +
+      '<input class="cfg-in" style="max-width:90px;" maxlength="8" placeholder="Dashboard" value="' + esc(l.dash || '') + '" oninput="cfgLevelSet(' + i + ',\'dash\',this.value)"/>' +
+      '<button class="cm-del" onclick="cfgLevelDel(' + i + ')">Delete</button></div>').join('');
+  return '<p class="cfg-help"><strong>Code</strong> is what pours and drawings are filed under (letters/digits, up to 8). <strong>Display name</strong> is what people see. ' +
+    '<strong>Dashboard</strong> is the code the dashboard uses for the same level, which is needed for the level-complete banner; leave it blank if it is the same as the code.</p>' +
+    '<div class="cfg-head"><span style="width:62px;"></span><span style="width:80px;">Code</span><span style="flex:1;">Display name</span><span style="width:90px;">Dashboard</span><span style="width:52px;"></span></div>' +
+    rows +
+    '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">' +
+      '<button class="tbtn" onclick="cfgLevelAdd()">+ Add level</button>' +
+      '<span style="font-size:12px;color:var(--text-secondary);">or add numbered levels 1 to</span>' +
+      '<input id="cfg-num" class="cfg-in" style="max-width:60px;flex:none;" type="number" min="1" max="60" value="10"/>' +
+      '<button class="tbtn" onclick="cfgLevelsNumbered()">Add</button></div>';
+}
+function cfgLevelSet(i, k, v) {
+  const l = cfgDraft.levels[i];
+  if (k === 'code' && v !== l.code) delete l.fallback;   // a renamed level no longer uses the built-in drawing
+  l[k] = v;
+}
+function cfgLevelMove(i, d) {
+  const j = i + d, a = cfgDraft.levels;
+  if (j < 0 || j >= a.length) return;
+  [a[i], a[j]] = [a[j], a[i]]; renderSetup();
+}
+function cfgLevelDel(i) {
+  const l = cfgDraft.levels[i];
+  const n = pours.filter(p => p.level === l.code).length;
+  if (n && !confirm('"' + l.name + '" has ' + n + ' logged pour' + (n === 1 ? '' : 's') + '. Those pours stay saved but won\'t show on the map unless a level with the same code exists. Delete anyway?')) return;
+  cfgDraft.levels.splice(i, 1); renderSetup();
+}
+function cfgLevelAdd() { cfgDraft.levels.push({ code: '', name: '', dash: '' }); renderSetup(); }
+function cfgLevelsNumbered() {
+  const n = Math.max(1, Math.min(60, parseInt(document.getElementById('cfg-num').value, 10) || 0));
+  for (let k = 1; k <= n; k++)
+    if (!cfgDraft.levels.some(l => l.code === String(k))) cfgDraft.levels.push({ code: String(k), name: 'Level ' + k, dash: 'L' + k });
+  renderSetup();
+}
+
+// -- Pour types
+function cfgTypesHtml() {
+  const rows = cfgDraft.pourTypes.map((t, i) =>
+    '<div class="cfg-row"><input type="color" value="' + esc(t.color) + '" oninput="cfgTypeSet(' + i + ',\'color\',this.value)"/>' +
+    '<input class="cfg-in" maxlength="30" placeholder="Pour type name" value="' + esc(t.name) + '" oninput="cfgTypeSet(' + i + ',\'name\',this.value)"/>' +
+    '<button class="cm-del" onclick="cfgTypeDel(' + i + ')">Delete</button></div>').join('');
+  return '<p class="cfg-help">The kinds of pour on this job and the colour each one shows on the map. The first type is used when a PO\'s location isn\'t listed under Locations. ' +
+    'Renaming a type updates the Locations list, but pours already logged keep their old type name.</p>' + rows +
+    '<button class="tbtn" style="margin-top:8px;" onclick="cfgTypeAdd()">+ Add pour type</button>';
+}
+function cfgTypeSet(i, k, v) {
+  const t = cfgDraft.pourTypes[i];
+  if (k === 'name') cfgDraft.locList.forEach(l => { if (l.type === t.name) l.type = v; });   // keep locations pointing at the renamed type
+  t[k] = v;
+}
+function cfgTypeDel(i) {
+  const t = cfgDraft.pourTypes[i];
+  cfgDraft.pourTypes.splice(i, 1);
+  cfgDraft.locList.forEach(l => { if (l.type === t.name) l.type = ''; });
+  renderSetup();
+}
+function cfgTypeAdd() { cfgDraft.pourTypes.push({ name: '', color: '#888888' }); renderSetup(); }
+
+// -- Locations (Smartsheet "Location Used" value -> pour type)
+function cfgLocationsHtml() {
+  const rows = cfgDraft.locList.map((l, i) =>
+    '<div class="cfg-row"><input class="cfg-in" style="flex:2;" maxlength="100" placeholder="Exactly as in Smartsheet" value="' + esc(l.name) + '" oninput="cfgLocSet(' + i + ',\'name\',this.value)"/>' +
+    '<select class="cfg-in" onchange="cfgLocSet(' + i + ',\'type\',this.value)">' +
+      '<option value="">Choose type...</option>' +
+      cfgDraft.pourTypes.map(t => '<option' + (t.name === l.type ? ' selected' : '') + '>' + esc(t.name) + '</option>').join('') + '</select>' +
+    '<button class="cm-del" onclick="cfgLocDel(' + i + ')">Delete</button></div>').join('');
+  return '<p class="cfg-help">The values in the Concrete Log\'s <strong>Location Used</strong> column, and which pour type each one is. Spelling must match Smartsheet exactly. ' +
+    'This decides the colour of a pour when you link it to a PO.</p>' + rows +
+    '<button class="tbtn" style="margin-top:8px;" onclick="cfgLocAdd()">+ Add location</button>';
+}
+function cfgLocSet(i, k, v) { cfgDraft.locList[i][k] = v; }
+function cfgLocDel(i) { cfgDraft.locList.splice(i, 1); renderSetup(); }
+function cfgLocAdd() { cfgDraft.locList.push({ name: '', type: cfgDraft.pourTypes[0] ? cfgDraft.pourTypes[0].name : '' }); renderSetup(); }
+
+function cfgStartBlank() {
+  if (!confirm('Replace everything in this screen with a blank template? Nothing is saved until you press Save. Pours, drawings, comments and reports are not affected.')) return;
+  cfgDraft = cfgClone(BLANK_CONFIG);
+  cfgDraft.locList = [];
+  cfgLogoData = null; cfgTab = 'branding';
+  cfgMsg('Blank template loaded. Fill it in, then press Save.', true);
+  renderSetup();
+}
+
+async function saveSiteSetup() {
+  if (!editorMode || !cfgDraft) return;
+  const d = cfgDraft, b = d.branding;
+  const fail = t => { cfgMsg(t); return false; };
+  if (!b.company.trim()) return fail('Branding: enter a company name.');
+  if (!b.project.trim()) return fail('Branding: enter a project name.');
+  if (b.logoMode === 'custom' && !cfgLogoData && !b.logoVersion) return fail('Branding: choose a logo file, or pick another logo option.');
+  if (!d.levels.length) return fail('Levels: add at least one level.');
+  const seenL = new Set();
+  for (const l of d.levels) {
+    if (!/^[A-Za-z0-9]{1,8}$/.test(l.code)) return fail('Levels: every code must be 1-8 letters or digits' + (l.code ? ' (check "' + l.code + '").' : '.'));
+    if (seenL.has(l.code.toLowerCase())) return fail('Levels: code "' + l.code + '" is used twice.');
+    seenL.add(l.code.toLowerCase());
+    if (l.dash && !/^[A-Za-z0-9]{1,8}$/.test(l.dash)) return fail('Levels: dashboard code "' + l.dash + '" must be 1-8 letters or digits.');
+  }
+  if (!d.pourTypes.length) return fail('Pour types: add at least one.');
+  const seenT = new Set();
+  for (const t of d.pourTypes) {
+    if (!t.name.trim()) return fail('Pour types: every type needs a name.');
+    if (seenT.has(t.name.trim().toLowerCase())) return fail('Pour types: "' + t.name + '" is used twice.');
+    seenT.add(t.name.trim().toLowerCase());
+  }
+  const locations = {};
+  for (const l of d.locList) {
+    if (!l.name.trim()) return fail('Locations: a location has no name.');
+    if (!l.type) return fail('Locations: choose a pour type for "' + l.name + '".');
+    if (locations[l.name.trim()]) return fail('Locations: "' + l.name + '" is listed twice.');
+    locations[l.name.trim()] = l.type;
+  }
+
+  const btn = document.getElementById('cfg-save');
+  btn.disabled = true; cfgMsg('Saving...', true);
+  try {
+    if (b.logoMode === 'custom' && cfgLogoData) {
+      const lr = await fetch('/.netlify/functions/save-logo', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ dataUrl: cfgLogoData }) });
+      const ld = await lr.json().catch(() => ({}));
+      if (lr.status === 401) { btn.disabled = false; closeSiteSetup(); handleUnauthorized(); return; }
+      if (!lr.ok) { cfgMsg('Logo: ' + (ld.error || 'could not upload (HTTP ' + lr.status + ').')); btn.disabled = false; return; }
+      b.logoVersion = ld.version;
+    }
+    const payload = { branding: b, levels: d.levels, pourTypes: d.pourTypes, locations };
+    const res = await fetch('/.netlify/functions/save-config', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ config: payload }) });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) { btn.disabled = false; closeSiteSetup(); handleUnauthorized(); return; }
+    if (!res.ok) { cfgMsg(data.error || 'Could not save (HTTP ' + res.status + ').'); btn.disabled = false; return; }
+    siteConfig = mergeConfig(data.config);
+    applyConfig();
+    closeSiteSetup();
+    setStatus('Site setup saved');
+    if (smData) syncData();
+  } catch (e) {
+    cfgMsg('Could not reach the server.');
+  }
+  btn.disabled = false;
+}
+
+async function initSite() {
+  await loadConfig();                     // names, levels, pour types
+  loadPours();
+  loadDrawingForLevel(currentLevel);
+}
 
 const DW=2048, DH=1728;
 const canvas=document.getElementById('c');
@@ -621,11 +905,7 @@ let hoverPt=null, hoverRaf=0; // live cursor position while drawing
 const CLOSE_PX = 14;      // how close (screen px) to the first dot counts as 'finish here'
 let currentLevel='P2', pendingPts=null, redrawingId=null;
 
-bg = new Image();
-bg.onload = () => { fitToWindow(); loadPours(); };
-bg.src = FALLBACK_DRAWING;
-// Load level drawing after initial render (replaces fallback if uploaded version exists)
-window.addEventListener('load', () => loadDrawingForLevel('P2'));
+bg = new Image();   // the level's drawing is loaded once the site settings are known (see initSite)
 
 function fitToWindow(){scale=Math.min(wrap.clientWidth/DW,wrap.clientHeight/DH);if(scale*DW<wrap.clientWidth)scale=wrap.clientWidth/DW;resize();}
 function resize(){canvas.width=Math.round(DW*scale);canvas.height=Math.round(DH*scale);render();}
@@ -819,9 +1099,9 @@ function drawPour(p, sel, dimmed) {
 }
 
 function guessType(p){
-  if(!p.mixes||!p.mixes[0])return'Footings';
+  if(!p.mixes||!p.mixes[0])return defaultType();
   const loc=p.mixes[0].location||'';
-  return LOCATION_TO_TYPE[loc]||'Footings';
+  return typeForLocation(loc);
 }
 function getStatus(p){
   if(!smData||!smData.rows)return'empty';
@@ -1636,15 +1916,16 @@ async function loadLevelStatus() {
 // Pour map levels are P2, P1, P1a, 1..25. The dashboard uses log codes (L1, L2...)
 // and counts P1a as part of P1.
 function dashboardLevelKeys(level) {
-  if (/^\d+$/.test(level)) return ['L' + level, level];
-  if (level === 'P1a') return ['P1a', 'P1'];
-  return [level];
+  const l = levelCfg(level), keys = [];
+  if (l && l.dash) keys.push(l.dash);
+  keys.push(level);
+  return keys;
 }
 
 function updateLevelBanner() {
   const el = document.getElementById('level-banner');
   if (!el) return;
-  const name = 'Level ' + currentLevel;
+  const name = levelName(currentLevel);
   let html, bg, color;
   if (!levelStatus || !levelStatus.completed) {
     html = name + ' -- completion status unavailable';
@@ -1654,7 +1935,7 @@ function updateLevelBanner() {
     const key = dashboardLevelKeys(currentLevel).find(k => done[k]);
     if (key) {
       const when = done[key].completedAt ? new Date(done[key].completedAt).toLocaleDateString() : '';
-      const viaP1 = currentLevel === 'P1a' && key === 'P1' ? ' (counted with P1)' : '';
+      const viaP1 = (key !== currentLevel && (siteConfig.levels || []).some(x => x.code === key)) ? ' (counted with ' + levelName(key) + ')' : '';
       html = '&#10003; ' + name + ' COMPLETE' + viaP1 + (when ? ' &middot; marked complete ' + when + ' on the dashboard' : '');
       bg = '#eaf3de'; color = '#3b6d11';
     } else {
@@ -1670,7 +1951,7 @@ function updateLevelBanner() {
 
 function switchLevel(){
   currentLevel=document.getElementById('level-sel').value;
-  document.getElementById('level-label').textContent='Level '+currentLevel;
+  document.getElementById('level-label').textContent=levelName(currentLevel);
   document.getElementById('upload-level').value=currentLevel;
   selectPour(null);
   loadDrawingForLevel(currentLevel);
@@ -1750,7 +2031,7 @@ async function savePour(){
   const poNum=document.getElementById('f-po').value;
   const po=smData&&smData.pos?smData.pos.find(p=>p.po===poNum):null;
   const date=po&&po.date?po.date:new Date().toISOString().split('T')[0];
-  const type=po&&po.mixes&&po.mixes[0]?LOCATION_TO_TYPE[po.mixes[0].location||'']||'Footings':'Footings';
+  const type=po&&po.mixes&&po.mixes[0]?typeForLocation(po.mixes[0].location||''):defaultType();
   const level=currentLevel;
   const testPo=document.getElementById('f-test-po').value.trim();
 
@@ -1786,7 +2067,7 @@ async function savePour(){
     selected=pour;
     buildPourList();
     render();
-    setStatus('Saved: '+poNum+' ('+date+') -- '+type+' -- Level '+level);
+    setStatus('Saved: '+poNum+' ('+date+') -- '+type+' -- '+levelName(level));
   }
 }
 
@@ -1806,7 +2087,7 @@ function buildPourList() {
     return false;
   });
   document.getElementById('panel-title').textContent =
-    'Logged pours -- Level ' + currentLevel + ' (' + levelPours.length + ')';
+    'Logged pours -- ' + levelName(currentLevel) + ' (' + levelPours.length + ')';
   document.getElementById('del-btn').style.display = 'none';
   if (levelPours.length === 0) {
     document.getElementById('panel-body').innerHTML =
@@ -1986,7 +2267,7 @@ async function syncData(){
     render();
   }catch(e){el.textContent='Sync failed: '+e.message;}
 }
-window.addEventListener('load',()=>{applyMode();loadLevelStatus();loadComments();loadReports();setTimeout(syncData,600);});
+window.addEventListener('load',()=>{applyMode();loadLevelStatus();loadComments();loadReports();setTimeout(syncData,600);initSite();});
 </script>
 </body>
 </html>
