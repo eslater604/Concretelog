@@ -57,7 +57,7 @@ canvas{display:block;}
 .pour-list-item{border-bottom:1px solid var(--border);overflow:hidden;}
 .pour-list-item:last-child{border-bottom:none;}
 .pour-list-header{display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;user-select:none;}
-.pour-list-num{width:36px;height:36px;border-radius:50%;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;}
+.pour-list-num{width:30px;height:30px;border-radius:50%;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;}
 .pour-list-title{flex:1;font-size:13px;font-weight:700;}
 .pour-list-sub{font-size:11px;color:var(--text-muted);}
 .pour-list-chevron{font-size:10px;color:var(--text-muted);transition:transform .2s;}
@@ -192,10 +192,6 @@ canvas{display:block;}
 <div class="legend">
   <strong style="font-size:11px;color:var(--text);">Pour type:</strong>
   <span id="legend-types" style="display:contents;"></span>
-  <div class="tsep"></div>
-  <div class="li"><span class="ls" style="background:var(--green);border-radius:50%;width:10px;height:10px;"></span>On track</div>
-  <div class="li"><span class="ls" style="background:var(--amber);border-radius:50%;width:10px;height:10px;"></span>Near est.</div>
-  <div class="li"><span class="ls" style="background:var(--red);border-radius:50%;width:10px;height:10px;"></span>Over est.</div>
 </div>
 
 <div class="main">
@@ -1055,40 +1051,6 @@ function render(){
   }
 }
 
-// Total plan areas extracted from P2 drawing (image analysis, 3/32"=1' scale)
-// These are the 100% denominators for each pour type's donut chart.
-// Units: m² of plan area visible on the Level P2 structural drawing.
-const DRAWING_TOTAL_AREAS = {
-  'P2': {
-    'Footings':       350,   // pads + strip + core pad + shear wall footing
-    'Walls':           52,
-    'Columns':        3.8,
-    'Slabs on grade': 612,
-    'Suspended slab': 612,
-    'Blinding':       350,   // same footprint as footings
-  }
-};
-
-// Get total plan area for a given level + type (px² on canvas, scaled to m²)
-function getTotalPlanArea(level, type) {
-  const byLevel = DRAWING_TOTAL_AREAS[level];
-  return byLevel ? (byLevel[type] || 100) : 100;
-}
-
-// Polygon area in m² using shoelace (points are in drawing coords, px at scale=1)
-function polyAreaM2(pts) {
-  if (!pts || pts.length < 3) return 0;
-  let a = 0;
-  const n = pts.length;
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
-  }
-  // pts are in drawing-space pixels (at scale=1), convert to m²
-  // 1 drawing px = 45.7mm = 0.0457m  ->  1 px² = 0.002089 m²
-  return Math.abs(a) / 2 * 0.002089;
-}
-
 function getShapes(p) {
   // Support both old single-polygon (points) and new multi-polygon (shapes) format
   if (p.shapes && p.shapes.length > 0) return p.shapes;
@@ -1156,7 +1118,7 @@ function labelInfo(p) {
 function badgePlacements(list) {
   const out = new Map(), placed = [];
   const fs = Math.max(9, Math.round(11 * scale));
-  const rad = (fs * 1.1 + Math.max(3, fs * 0.55) + 6) / scale;          // badge + ring + margin, in drawing units
+  const rad = (fs * 1.1 + 6) / scale;                                    // badge + margin, in drawing units
   const items = list.map(p => ({ p, info: labelInfo(p) })).filter(x => x.info);
   items.sort((a, b) => a.info.r - b.info.r);                              // small shapes keep their centre; big ones move aside
   items.forEach(({ p, info }) => {
@@ -1229,35 +1191,7 @@ function drawPour(p, sel, dimmed, at) {
   const lp = at || labelInfo(p) || { x: 0, y: 0 };
   const fs=Math.max(9,Math.round(11*scale));
   const badgeR = fs * 1.1; // radius of the badge circle
-  const donutR = badgeR + Math.max(3, fs * 0.55); // outer radius of donut ring
   const bx = lp.x*scale, by = (lp.y*scale) - fs*0.6;
-
-  // -- % complete: sum of ALL drawn polygons of this type / total plan area from drawing --
-  const totalPlanM2 = getTotalPlanArea(currentLevel, type);
-  let drawnM2 = 0;
-  levelPours.forEach(lp => {
-    if ((lp.type||guessType(lp)) === type) {
-      getShapes(lp).forEach(pts => { drawnM2 += polyAreaM2(pts); });
-    }
-  });
-  const pct = Math.min(drawnM2 / totalPlanM2, 1);
-
-  // -- Draw donut ring (track + filled arc) --
-  const startAngle = -Math.PI / 2; // start at top
-  // Track (light)
-  ctx.beginPath();
-  ctx.arc(bx, by, donutR, 0, Math.PI*2);
-  ctx.strokeStyle = `rgba(${r},${g},${b},0.2)`;
-  ctx.lineWidth = Math.max(2, fs*0.45);
-  ctx.stroke();
-  // Filled arc
-  if (pct > 0) {
-    ctx.beginPath();
-    ctx.arc(bx, by, donutR, startAngle, startAngle + pct * Math.PI * 2);
-    ctx.strokeStyle = sel ? '#1a6bff' : base;
-    ctx.lineWidth = Math.max(2, fs*0.45);
-    ctx.stroke();
-  }
 
   // -- Badge circle --
   ctx.beginPath();ctx.arc(bx, by, badgeR, 0, Math.PI*2);
@@ -1266,17 +1200,11 @@ function drawPour(p, sel, dimmed, at) {
   ctx.fillStyle='#fff';
   ctx.fillText(num>0?num:'?', bx, by);
 
-  // -- % label just below the donut --
-  const pctLabel = Math.round(pct*100)+'%';
-  ctx.font=`bold ${Math.max(7,Math.round(fs*0.8))}px sans-serif`;
-  ctx.fillStyle='rgba(0,0,0,0.75)';
-  ctx.fillText(pctLabel, bx, by + donutR + Math.max(5, fs*0.6));
-
-  // -- PO label below % --
+  // -- PO number under the badge --
   if(p.po){
     ctx.font=`${Math.max(7,fs-2)}px sans-serif`;
     ctx.fillStyle='rgba(0,0,0,0.7)';
-    ctx.fillText(p.po, bx, by + donutR + Math.max(5, fs*0.6) + Math.max(8, fs*0.9));
+    ctx.fillText(p.po, bx, by + badgeR + Math.max(7, fs*0.8));
   }
 }
 
@@ -1285,15 +1213,6 @@ function guessType(p){
   const loc=p.mixes[0].location||'';
   return typeForLocation(loc);
 }
-function getStatus(p){
-  if(!smData||!smData.rows)return'empty';
-  const type=p.type||guessType(p);
-  const lvl=p.level||(p.mixes&&p.mixes[0]?p.mixes[0].level:currentLevel);
-  const row=smData.rows.find(r=>r.level===lvl&&r.category===type);
-  if(!row||row.pctUsed===null)return'empty';
-  if(row.pctUsed>100)return'over';if(row.pctUsed>=85)return'near';return'ok';
-}
-function statusColor(s){return s==='over'?'#e24b4a':s==='near'?'#ef9f27':s==='ok'?'#639922':null;}
 function hexRgb(hex){return hex?[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)]:[150,150,150];}
 
 // ---- Input ------------------------------------------------------------------------------------------------------------------------------------------
@@ -2654,50 +2573,18 @@ function buildPourList() {
     return;
   }
   document.getElementById('panel-body').innerHTML = levelPours.map((p, i) => {
-    const smRow = smData && smData.rows ?
-      smData.rows.find(r => r.level === (p.level||currentLevel) && r.category === (p.type||guessType(p))) : null;
-    const pct = smRow ? smRow.pctUsed : null;
-    const bc = pct===null?'bx':pct>100?'br':pct>=85?'ba':'bg';
-    const bl = pct!==null&&pct>0?(pct>100?pct.toFixed(1)+'% over':pct.toFixed(1)+'%'):'';
     const typeColor = TYPE_COLORS[p.type||guessType(p)]||'#999';
     const mixSummary = (p.mixes||[]).filter(m=>m.volume).map(m=>(m.mixCode||'?')+' '+m.volume+'m³').join(', ');
     const shapeCount = getShapes(p).length;
     const cmCount = (commentsByPour[p.id] || []).length;
     const isOpen = openPourCards.has(p.id) || (selected && selected.id === p.id);
-    const _type = p.type||guessType(p);
-    const _totalPlanM2 = getTotalPlanArea(currentLevel, _type);
-    let _drawnM2 = 0;
-    levelPours.forEach(lp => {
-      if ((lp.type||guessType(lp))===_type) getShapes(lp).forEach(pts => { _drawnM2 += polyAreaM2(pts); });
-    });
-    const _areaPct = Math.round(Math.min(_drawnM2/_totalPlanM2,1)*100);
-    const _shapeCount = getShapes(p).length; const _areaLabel = _shapeCount>0 ? _areaPct+'% of '+_type.toLowerCase()+' marked up' : '';
     return '<div class="pour-list-item" id="pli-'+i+'">' +
       '<div class="pour-list-header" data-pid="'+p.id+'" onclick="togglePourItem('+i+',this.dataset.pid)">' +
-        (function(){
-          const _totalM2 = getTotalPlanArea(currentLevel, _type);
-          let _totalDrawn = 0;
-          levelPours.forEach(lp => { if((lp.type||guessType(lp))===_type) getShapes(lp).forEach(pts => { _totalDrawn += polyAreaM2(pts); }); });
-          const _pct = Math.min(_totalDrawn / _totalM2, 1);
-          const _r = 15, _cx = 18, _cy = 18, _stroke = 4;
-          const _circ = 2 * Math.PI * _r;
-          const _dash = _pct * _circ;
-          return '<div class="pour-list-num" style="background:transparent;width:36px;height:36px;">'
-            + '<svg width="36" height="36" viewBox="0 0 36 36" style="position:absolute;top:0;left:0;">'
-            + '<circle cx="'+_cx+'" cy="'+_cy+'" r="'+_r+'" fill="'+typeColor+'" opacity="0.15"/>'
-            + '<circle cx="'+_cx+'" cy="'+_cy+'" r="'+_r+'" fill="none" stroke="'+typeColor+'" stroke-width="'+_stroke+'" opacity="0.25"/>'
-            + '<circle cx="'+_cx+'" cy="'+_cy+'" r="'+_r+'" fill="none" stroke="'+typeColor+'" stroke-width="'+_stroke+'" stroke-dasharray="'+_dash+' '+_circ+'" stroke-dashoffset="0" transform="rotate(-90 '+_cx+' '+_cy+')"/>'
-            + '<circle cx="'+_cx+'" cy="'+_cy+'" r="'+(+_r - +_stroke - 1)+'" fill="'+typeColor+'"/>'
-            + '<text x="'+_cx+'" y="'+_cy+'" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="11" font-weight="bold">'+(i+1)+'</text>'
-            + '</svg>'
-            + '</div>';
-        })()
-        + ' ' +
+        '<div class="pour-list-num" style="background:'+typeColor+'">'+(i+1)+'</div>' +
         '<div style="flex:1;min-width:0;">' +
           '<div class="pour-list-title">'+(p.po||'PO unknown')+'</div>' +
-          '<div class="pour-list-sub">'+(p.date||'')+' '+(p.type?'&middot; '+p.type:'')+(shapeCount>1?' &middot; '+shapeCount+' areas':'')+(cmCount?' &middot; &#128172; '+cmCount:'')+(_areaLabel?' &middot; <strong>'+_areaPct+'%</strong>':'')+'</div>' +
+          '<div class="pour-list-sub">'+(p.date||'')+' '+(p.type?'&middot; '+p.type:'')+(shapeCount>1?' &middot; '+shapeCount+' areas':'')+(cmCount?' &middot; &#128172; '+cmCount:'')+'</div>' +
         '</div>' +
-        (bl?'<span class="badge '+bc+'" style="font-size:10px;margin-right:4px;">'+bl+'</span>':'') +
         '<span class="pour-list-chevron'+(isOpen?' open':'')+'" id="chev-'+i+'">&#9654;</span>' +
       '</div>' +
       '<div class="pour-list-body'+(isOpen?' open':'')+'" id="plb-'+i+'">' +
