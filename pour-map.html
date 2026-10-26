@@ -112,6 +112,8 @@ canvas{display:block;}
   </div>
 </header>
 
+<div id="level-banner" style="display:none;padding:5px 20px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border);"></div>
+
 <div class="toolbar">
   <button class="tbtn" id="mode-toggle" onclick="toggleMode()" style="font-weight:700;">&#128274; Edit mode</button>
   <div class="tsep"></div>
@@ -929,6 +931,52 @@ function setTool(t){
 function clearLastPoint(){if(currentPts.length>0){currentPts.pop();render();}}
 function cancelDraw(){currentPts=[];redrawingId=null;render();['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');setStatus('Cancelled');}
 function setStatus(m){document.getElementById('status-bar').textContent=m;}
+// ---- Level completion banner (read-only: uses the dashboard's level-status data) ----
+let levelStatus = null; // { completed: { "L1": { completedAt }, ... } } or null if unavailable
+
+async function loadLevelStatus() {
+  try {
+    const res = await fetch('/.netlify/functions/level-status');
+    levelStatus = res.ok ? await res.json() : null;
+  } catch (e) { levelStatus = null; }
+  updateLevelBanner();
+}
+
+// Pour map levels are P2, P1, P1a, 1..25. The dashboard uses log codes (L1, L2...)
+// and counts P1a as part of P1.
+function dashboardLevelKeys(level) {
+  if (/^\d+$/.test(level)) return ['L' + level, level];
+  if (level === 'P1a') return ['P1a', 'P1'];
+  return [level];
+}
+
+function updateLevelBanner() {
+  const el = document.getElementById('level-banner');
+  if (!el) return;
+  const name = 'Level ' + currentLevel;
+  let html, bg, color;
+  if (!levelStatus || !levelStatus.completed) {
+    html = name + ' -- completion status unavailable';
+    bg = 'var(--bg)'; color = 'var(--text-muted)';
+  } else {
+    const done = levelStatus.completed;
+    const key = dashboardLevelKeys(currentLevel).find(k => done[k]);
+    if (key) {
+      const when = done[key].completedAt ? new Date(done[key].completedAt).toLocaleDateString() : '';
+      const viaP1 = currentLevel === 'P1a' && key === 'P1' ? ' (counted with P1)' : '';
+      html = '&#10003; ' + name + ' COMPLETE' + viaP1 + (when ? ' &middot; marked complete ' + when + ' on the dashboard' : '');
+      bg = '#eaf3de'; color = '#3b6d11';
+    } else {
+      html = name + ' &middot; not marked complete on the dashboard';
+      bg = 'var(--bg)'; color = 'var(--text-secondary)';
+    }
+  }
+  el.innerHTML = html;
+  el.style.background = bg;
+  el.style.color = color;
+  el.style.display = 'block';
+}
+
 function switchLevel(){
   currentLevel=document.getElementById('level-sel').value;
   document.getElementById('level-label').textContent='Level '+currentLevel;
@@ -936,6 +984,7 @@ function switchLevel(){
   selectPour(null);
   loadDrawingForLevel(currentLevel);
   buildPourList();
+  updateLevelBanner();
 }
 
 // ---- Pour form ----------------------------------------------------------------------------------------------------------------------------------
@@ -1233,13 +1282,14 @@ async function syncData(){
     const data=await res.json();
     if(!res.ok)throw new Error(data.error||'failed');
     smData=data;
+    loadLevelStatus();
     el.textContent='Synced '+new Date(data.updatedAt).toLocaleTimeString();
     if(selected)selectPour(selected);
     buildPourList();
     render();
   }catch(e){el.textContent='Sync failed: '+e.message;}
 }
-window.addEventListener('load',()=>{applyMode();setTimeout(syncData,600);});
+window.addEventListener('load',()=>{applyMode();loadLevelStatus();setTimeout(syncData,600);});
 </script>
 </body>
 </html>
