@@ -140,6 +140,10 @@ canvas{display:block;}
 .imp-sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle;}
 .imp-ok{color:#3b6d11;font-weight:700;} .imp-warn{color:#854f0b;font-weight:700;} .imp-bad{color:var(--red);font-weight:700;}
 .imp-note{display:block;font-size:11px;color:#854f0b;margin-top:2px;font-weight:400;}
+.li-toggle{cursor:pointer;user-select:none;}
+.li-toggle:hover{opacity:.75;}
+.li-off{opacity:.4;text-decoration:line-through;}
+.li-all{color:var(--brand-red);font-weight:700;text-decoration:none !important;}
 </style>
 </head>
 <body class="cfg-loading">
@@ -639,7 +643,7 @@ const DEFAULT_CONFIG = {
            { code: 'P1', name: 'Level P1', dash: 'P1' },
            { code: 'P1a', name: 'Level P1a', dash: 'P1' }]
           .concat(Array.from({ length: 25 }, (_, i) => ({ code: String(i + 1), name: 'Level ' + (i + 1), dash: 'L' + (i + 1) }))),
-  pourTypes: Object.entries(TYPE_COLORS).map(([name, color]) => ({ name, color })),
+  pourTypes: Object.entries(TYPE_COLORS).map(([name, color]) => ({ name, color, fill: /slab/i.test(name) ? 'hatch' : 'solid' })),
   locations: Object.assign({}, LOCATION_TO_TYPE)
 };
 const BLANK_CONFIG = {
@@ -647,13 +651,36 @@ const BLANK_CONFIG = {
   branding: { company: 'Your Company', project: 'Your Project', mapTitle: 'Pour Map', dashboardTitle: 'Concrete Dashboard',
               primary: '#2F5D8A', accent: '#E1A21C', logoMode: 'text', logoVersion: '' },
   levels: [{ code: '1', name: 'Level 1', dash: 'L1' }],
-  pourTypes: [{ name: 'Footings', color: '#d4725a' }, { name: 'Walls', color: '#d4a85a' },
-              { name: 'Columns', color: '#5a9ed4' }, { name: 'Slabs', color: '#6dc48a' }],
+  pourTypes: [{ name: 'Footings', color: '#d4725a', fill: 'solid' }, { name: 'Walls', color: '#d4a85a', fill: 'solid' },
+              { name: 'Columns', color: '#5a9ed4', fill: 'solid' }, { name: 'Slabs', color: '#6dc48a', fill: 'hatch' }],
   locations: {}
 };
 let siteConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 
 function cfgClone(o) { return JSON.parse(JSON.stringify(o)); }
+
+// ---- Legend: click a pour type to hide or show it on the map ---------------------------------
+let hiddenTypes = new Set();
+function typeFill(name) {
+  const t = (siteConfig.pourTypes || []).find(x => x.name === name);
+  return t && t.fill === 'hatch' ? 'hatch' : 'solid';
+}
+function renderLegend() {
+  const el = document.getElementById('legend-types');
+  el.innerHTML = siteConfig.pourTypes.map(t => {
+    const sw = t.fill === 'hatch'
+      ? 'background:repeating-linear-gradient(45deg,' + t.color + ' 0,' + t.color + ' 1.5px,' + t.color + '33 1.5px,' + t.color + '33 4px);'
+      : 'background:' + t.color + ';';
+    return '<div class="li li-toggle' + (hiddenTypes.has(t.name) ? ' li-off' : '') + '" data-type="' + esc(t.name) + '" ' +
+      'onclick="toggleTypeVisible(this.dataset.type)" title="Click to hide or show this pour type on the map">' +
+      '<span class="ls" style="' + esc(sw) + '"></span>' + esc(t.name) + '</div>';
+  }).join('') + (hiddenTypes.size ? '<div class="li li-toggle li-all" onclick="showAllTypes()">Show all</div>' : '');
+}
+function toggleTypeVisible(name) {
+  if (hiddenTypes.has(name)) hiddenTypes.delete(name); else hiddenTypes.add(name);
+  renderLegend(); render();
+}
+function showAllTypes() { hiddenTypes.clear(); renderLegend(); render(); }
 function levelCfg(code) { return (siteConfig.levels || []).find(l => l.code === code) || null; }
 function levelName(code) { const l = levelCfg(code); return l ? l.name : 'Level ' + code; }
 function defaultType() { return ((siteConfig.pourTypes || [])[0] || {}).name || 'Pour'; }
@@ -669,6 +696,7 @@ function mergeConfig(c) {   // saved settings, with any gaps filled from the def
   if (c && c.branding) out.branding = Object.assign(out.branding, c.branding);
   if (c && Array.isArray(c.levels) && c.levels.length) out.levels = c.levels;
   if (c && Array.isArray(c.pourTypes) && c.pourTypes.length) out.pourTypes = c.pourTypes;
+  out.pourTypes = out.pourTypes.map(t => Object.assign({ fill: /slab/i.test(t.name) ? 'hatch' : 'solid' }, t));   // older saved settings have no fill style
   if (c && c.locations && typeof c.locations === 'object') out.locations = c.locations;
   return out;
 }
@@ -709,8 +737,8 @@ function applyConfig() {
   TYPE_COLORS = {};
   siteConfig.pourTypes.forEach(t => { TYPE_COLORS[t.name] = t.color; });
   LOCATION_TO_TYPE = Object.assign({}, siteConfig.locations);
-  document.getElementById('legend-types').innerHTML = siteConfig.pourTypes.map(t =>
-    '<div class="li"><span class="ls" style="background:' + esc(t.color) + ';"></span>' + esc(t.name) + '</div>').join('');
+  hiddenTypes = new Set([...hiddenTypes].filter(n => TYPE_COLORS[n]));   // forget types that no longer exist
+  renderLegend();
 
   const opts = siteConfig.levels.map(l => '<option value="' + esc(l.code) + '">' + esc(l.name) + '</option>').join('');
   const prevLevel = currentLevel;
@@ -834,9 +862,12 @@ function cfgTypesHtml() {
   const rows = cfgDraft.pourTypes.map((t, i) =>
     '<div class="cfg-row"><input type="color" value="' + esc(t.color) + '" oninput="cfgTypeSet(' + i + ',\'color\',this.value)"/>' +
     '<input class="cfg-in" maxlength="30" placeholder="Pour type name" value="' + esc(t.name) + '" oninput="cfgTypeSet(' + i + ',\'name\',this.value)"/>' +
+    '<select class="cfg-in" style="flex:none;width:100px;" onchange="cfgTypeSet(' + i + ',\'fill\',this.value)">' +
+      '<option value="solid"' + (t.fill === 'hatch' ? '' : ' selected') + '>Solid</option><option value="hatch"' + (t.fill === 'hatch' ? ' selected' : '') + '>Hatched</option></select>' +
     '<button class="cm-del" onclick="cfgTypeDel(' + i + ')">Delete</button></div>').join('');
   return '<p class="cfg-help">The kinds of pour on this job and the colour each one shows on the map. The first type is used when a PO\'s location isn\'t listed under Locations. ' +
-    'Renaming a type updates the Locations list, but pours already logged keep their old type name.</p>' + rows +
+    'Renaming a type updates the Locations list, but pours already logged keep their old type name. ' +
+    '<strong>Hatched</strong> draws diagonal lines instead of a solid fill, so a big pour (like a slab) doesn\'t hide the drawing.</p>' + rows +
     '<button class="tbtn" style="margin-top:8px;" onclick="cfgTypeAdd()">+ Add pour type</button>';
 }
 function cfgTypeSet(i, k, v) {
@@ -850,7 +881,7 @@ function cfgTypeDel(i) {
   cfgDraft.locList.forEach(l => { if (l.type === t.name) l.type = ''; });
   renderSetup();
 }
-function cfgTypeAdd() { cfgDraft.pourTypes.push({ name: '', color: '#888888' }); renderSetup(); }
+function cfgTypeAdd() { cfgDraft.pourTypes.push({ name: '', color: '#888888', fill: 'solid' }); renderSetup(); }
 
 // -- Locations (Smartsheet "Location Used" value -> pour type)
 function cfgLocationsHtml() {
@@ -963,7 +994,10 @@ function render(){
   if(bg.complete&&bg.naturalWidth>0)ctx.drawImage(bg,0,0,canvas.width,canvas.height);
   const levelPours=pours.filter(p=>p.level===currentLevel||!p.level||(p.mixes&&p.mixes.some(m=>m.level===currentLevel)));
   const hasFocus=!!selected;
-  levelPours.forEach(p=>drawPour(p,p===selected,hasFocus&&p!==selected));
+  // pour types switched off in the legend are skipped (a focused pour is always shown)
+  const shown=levelPours.filter(p=>p===selected||!hiddenTypes.has(p.type||guessType(p)));
+  const places=badgePlacements(shown.filter(p=>!hasFocus||p===selected));
+  shown.forEach(p=>drawPour(p,p===selected,hasFocus&&p!==selected,places.get(p.id)));
   if(currentPts.length>0){
     const pts=currentPts;
     const hp=(hoverPt&&tool==='draw'&&editorMode)?hoverPt:null;
@@ -1062,7 +1096,112 @@ function getShapes(p) {
   return [];
 }
 
-function drawPour(p, sel, dimmed) {
+// ---- BADGE PLACEMENT START ----
+// Where each pour's badge goes: the "visual centre" (the point furthest from every edge) of its
+// largest shape, then nudged sideways inside that shape if it would sit on another badge.
+function ptSegDist2(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const t = (dx === 0 && dy === 0) ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+function polySignedDist(x, y, pts) {          // positive inside the shape, negative outside
+  let inside = false, min = Infinity;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i], b = pts[j];
+    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+    min = Math.min(min, ptSegDist2(x, y, a.x, a.y, b.x, b.y));
+  }
+  return (inside ? 1 : -1) * min;
+}
+function polyArea2(pts) {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p.x * q.y - q.x * p.y; }
+  return Math.abs(a) / 2;
+}
+function poleOfInaccessibility(pts, precision) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  pts.forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); });
+  const w = maxX - minX, h = maxY - minY, size = Math.min(w, h);
+  if (size === 0) return { x: minX, y: minY, d: 0 };
+  const mk = (x, y, hh) => { const d = polySignedDist(x, y, pts); return { x, y, h: hh, d, max: d + hh * Math.SQRT2 }; };
+  const half = size / 2, queue = [];
+  for (let x = minX; x < maxX; x += size) for (let y = minY; y < maxY; y += size) queue.push(mk(x + half, y + half, half));
+  let best = mk(minX + w / 2, minY + h / 2, 0), guard = 0;
+  while (queue.length && guard++ < 4000) {
+    queue.sort((a, b) => b.max - a.max);
+    const c = queue.shift();
+    if (c.d > best.d) best = c;
+    if (c.max - best.d <= precision) continue;
+    const hh = c.h / 2;
+    queue.push(mk(c.x - hh, c.y - hh, hh), mk(c.x + hh, c.y - hh, hh), mk(c.x - hh, c.y + hh, hh), mk(c.x + hh, c.y + hh, hh));
+  }
+  return { x: best.x, y: best.y, d: best.d };
+}
+const labelCache = new Map();
+function labelInfo(p) {
+  const shapes = getShapes(p).filter(s => s && s.length >= 3);
+  if (!shapes.length) return null;
+  const key = p.id + '|' + shapes.map(s => s.length + ':' + Math.round(s[0].x) + ',' + Math.round(s[0].y)).join(';');
+  let v = labelCache.get(key);
+  if (!v) {
+    if (labelCache.size > 600) labelCache.clear();
+    let big = shapes[0], ba = polyArea2(big);
+    shapes.forEach(s => { const a = polyArea2(s); if (a > ba) { ba = a; big = s; } });
+    const pole = poleOfInaccessibility(big, 1);
+    v = { x: pole.x, y: pole.y, r: pole.d, shape: big };
+    labelCache.set(key, v);
+  }
+  return v;
+}
+function badgePlacements(list) {
+  const out = new Map(), placed = [];
+  const fs = Math.max(9, Math.round(11 * scale));
+  const rad = (fs * 1.1 + Math.max(3, fs * 0.55) + 6) / scale;          // badge + ring + margin, in drawing units
+  const items = list.map(p => ({ p, info: labelInfo(p) })).filter(x => x.info);
+  items.sort((a, b) => a.info.r - b.info.r);                              // small shapes keep their centre; big ones move aside
+  items.forEach(({ p, info }) => {
+    const free = (x, y) => placed.every(q => Math.hypot(q.x - x, q.y - y) >= 1.8 * rad);
+    let pos = { x: info.x, y: info.y };
+    if (!free(pos.x, pos.y)) {
+      const cands = [];
+      for (let k = 1; k <= 12; k++) for (let a = 0; a < 360; a += 15) {
+        const ang = a * Math.PI / 180, d = k * rad * 0.6;
+        cands.push({ x: info.x + Math.cos(ang) * d, y: info.y + Math.sin(ang) * d, d });
+      }
+      cands.sort((u, v) => u.d - v.d);
+      // roomy shapes: keep the whole badge inside; thin shapes (walls, strips): just stay on the shape, so the badge can slide along it
+      const need = info.r >= rad ? rad * 0.9 : info.r * 0.5;
+      const hit = cands.find(c => free(c.x, c.y) && polySignedDist(c.x, c.y, info.shape) >= need);
+      if (hit) pos = { x: hit.x, y: hit.y };
+    }
+    placed.push(pos); out.set(p.id, pos);
+  });
+  return out;
+}
+// ---- BADGE PLACEMENT END ----
+
+// Diagonal-line fill, so a big pour (a slab) doesn't hide the drawing
+const hatchCache = {};
+function hatchDir(type) {
+  const hs = (siteConfig.pourTypes || []).filter(t => t.fill === 'hatch');
+  return hs.findIndex(t => t.name === type) % 2 ? 'back' : 'fwd';     // alternate '/' and '\' so two slab types look different
+}
+function hatchPattern(rgb, alpha, dir) {
+  const key = rgb.join(',') + '|' + alpha + '|' + dir;
+  if (hatchCache[key]) return hatchCache[key];
+  const s = 10, cv = document.createElement('canvas');
+  cv.width = cv.height = s;
+  const g = cv.getContext('2d');
+  g.fillStyle = 'rgba(' + rgb.join(',') + ',0.10)'; g.fillRect(0, 0, s, s);    // faint tint so the zone still reads as an area
+  g.strokeStyle = 'rgba(' + rgb.join(',') + ',' + alpha + ')'; g.lineWidth = 1.6;
+  g.beginPath();
+  if (dir === 'fwd') { g.moveTo(0, s); g.lineTo(s, 0); g.moveTo(-s / 2, s / 2); g.lineTo(s / 2, -s / 2); g.moveTo(s / 2, s * 1.5); g.lineTo(s * 1.5, s / 2); }
+  else { g.moveTo(0, 0); g.lineTo(s, s); g.moveTo(-s / 2, s / 2); g.lineTo(s / 2, s * 1.5); g.moveTo(s / 2, -s / 2); g.lineTo(s * 1.5, s / 2); }
+  g.stroke();
+  return (hatchCache[key] = ctx.createPattern(cv, 'repeat'));
+}
+
+function drawPour(p, sel, dimmed, at) {
   const shapes = getShapes(p);
   if (shapes.length === 0) return;
   const type=p.type||guessType(p);
@@ -1070,6 +1209,7 @@ function drawPour(p, sel, dimmed) {
   const [r,g,b]=hexRgb(base);
   const fillAlpha=dimmed?0.08:sel?0.75:0.55;
   const strokeAlpha=dimmed?0.15:1;
+  const fill=typeFill(type)==='hatch' ? hatchPattern([r,g,b], dimmed?0.12:sel?0.95:0.8, hatchDir(type)) : `rgba(${r},${g},${b},${fillAlpha})`;
   // Draw all shapes for this pour
   shapes.forEach(pts => {
     if (!pts || pts.length < 3) return;
@@ -1077,7 +1217,7 @@ function drawPour(p, sel, dimmed) {
     ctx.moveTo(pts[0].x*scale,pts[0].y*scale);
     pts.forEach(pt=>ctx.lineTo(pt.x*scale,pt.y*scale));
     ctx.closePath();
-    ctx.fillStyle=`rgba(${r},${g},${b},${fillAlpha})`;ctx.fill();
+    ctx.fillStyle=fill;ctx.fill();
     ctx.strokeStyle=dimmed?`rgba(${r},${g},${b},${strokeAlpha})`:sel?'#1a6bff':base;
     ctx.lineWidth=sel?3:2;ctx.stroke();
   });
@@ -1085,14 +1225,12 @@ function drawPour(p, sel, dimmed) {
 
   const levelPours=pours.filter(x=>x.level===currentLevel||!x.level||(x.mixes&&x.mixes.some(m=>m.level===currentLevel)));
   const num=levelPours.indexOf(p)+1;
-  // Centroid across all shapes
-  const _allPts=getShapes(p).flat();
-  const cx=_allPts.reduce((s,pt)=>s+pt.x,0)/Math.max(1,_allPts.length);
-  const cy=_allPts.reduce((s,pt)=>s+pt.y,0)/Math.max(1,_allPts.length);
+  // Badge sits at the visual centre of the pour's largest shape (render nudges it clear of other badges)
+  const lp = at || labelInfo(p) || { x: 0, y: 0 };
   const fs=Math.max(9,Math.round(11*scale));
   const badgeR = fs * 1.1; // radius of the badge circle
   const donutR = badgeR + Math.max(3, fs * 0.55); // outer radius of donut ring
-  const bx = cx*scale, by = (cy*scale) - fs*0.6;
+  const bx = lp.x*scale, by = (lp.y*scale) - fs*0.6;
 
   // -- % complete: sum of ALL drawn polygons of this type / total plan area from drawing --
   const totalPlanM2 = getTotalPlanArea(currentLevel, type);
@@ -1169,7 +1307,7 @@ canvas.addEventListener('click',e=>{
     document.getElementById('cancel-btn').style.display='';
     document.getElementById('undo-btn').style.display='';
   } else {
-    const hit=[...pours].reverse().find(p=>(p.level===currentLevel||!p.level)&&getShapes(p).some(pts=>ptIn(pt,pts)));
+    const hit=[...pours].reverse().find(p=>(p.level===currentLevel||!p.level)&&!hiddenTypes.has(p.type||guessType(p))&&getShapes(p).some(pts=>ptIn(pt,pts)));
     // Toggle focus: click focused pour again to clear focus
     if(hit){
       selected=(selected&&selected.id===hit.id)?null:hit;
