@@ -118,19 +118,6 @@
   .btn-secondary:hover { background: #FCEBEB; }
   .btn-secondary.active { background: var(--brand-red); color: #fff; }
 
-  /* Pour map notice (confirmation pop-up) */
-  .pm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 16px; }
-  .pm-overlay[hidden] { display: none; }
-  .pm-box { background: #fff; border-radius: 14px; padding: 22px 24px; max-width: 440px; width: 100%; box-shadow: 0 12px 48px rgba(0,0,0,.28); outline: none; color: var(--text); }
-  .pm-box h3 { margin: 0 0 10px; font-size: 17px; font-weight: 800; }
-  .pm-box p { margin: 0 0 10px; font-size: 14px; line-height: 1.5; }
-  .pm-box p.pm-sub { font-size: 12px; color: var(--text-secondary); }
-  .pm-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; margin-top: 18px; }
-  .pm-actions button { border-radius: 999px; padding: 9px 20px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
-  .pm-cancel { background: #fff; color: var(--text); border: 1px solid var(--border); }
-  .pm-go { background: var(--brand-red); color: #fff; border: none; }
-  .pm-go:hover { background: var(--brand-red-light); }
-
   .sov-panel { background: var(--bg); border-bottom: 1px solid var(--border); }
   .help-wrap { max-width: 920px; padding-top: 16px; padding-bottom: 16px; }
   .help-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
@@ -273,6 +260,8 @@
   .bal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .bal-title { font-weight: 600; font-size: 15px; }
   .bal-net { font-size: 18px; font-weight: 700; }
+  .bal-net-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .bal-proj { font-size: 13px; font-weight: 600; }
   .bal-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
   .bal-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
   .bal-table th { text-align: right; font-weight: 600; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; padding: 4px 6px; border-bottom: 1px solid var(--border); }
@@ -358,7 +347,6 @@
   <div class="toolbar">
     <div id="status">Not synced yet</div>
     <div style="display:flex; gap:10px;">
-      <button id="pm-btn" class="btn-secondary" onclick="openPourMapNotice()">Pour map</button>
       <button id="sov-btn" class="btn-secondary" onclick="toggleSov()">Schedule of Values</button>
       <button id="help-btn" class="btn-secondary" aria-expanded="false" onclick="toggleHelp()">Help</button>
       <button id="sync-btn" onclick="sync()">Sync now</button>
@@ -436,6 +424,7 @@
           <li>It appears above the cards as soon as you tick a level. It adds up <strong>every category</strong> on the selected level(s) against the estimate, so being over on columns and under on slabs nets out to one over or under figure.</li>
           <li>The headline shows the net, for example &ldquo;So far: 6.3 m&sup3; under&rdquo;. Under it you see which categories are over and which are under, plus the volume and cost counted.</li>
           <li><strong>Level not marked complete:</strong> only categories that have started are counted, so an unpoured category does not show as &ldquo;under&rdquo;. <strong>Level marked complete:</strong> the headline says &ldquo;Final&rdquo; and every budgeted category counts, including ones never poured.</li>
+          <li><strong>Logged</strong> is volume on POs that are in the Concrete Log but not ticked complete yet. <strong>Projected over / under</strong> (last column, and the smaller line under the headline) adds the logged volume to what has been poured, to give a rough idea of where the level will land if everything logged goes ahead as logged. It is an indication only: logged volumes can still change.</li>
           <li>With several levels ticked, the tile combines them, with a <strong>By category</strong> table and a <strong>By level</strong> table.</li>
         </ul></div>
       </details>
@@ -550,19 +539,6 @@
 
     <footer>Category-level costs use a proxy rate (blended actual $/m3 per category) since there's no per-category precon budget yet. The whole-building total uses the real $2,726,165 precon concrete budget.</footer>
   </div>
-
-<!-- Pour map notice: must be confirmed before opening the pour map -->
-<div class="pm-overlay" id="pm-overlay" hidden onclick="if (event.target === this) closePourMapNotice()">
-  <div class="pm-box" id="pm-box" role="dialog" aria-modal="true" aria-labelledby="pm-title" tabindex="-1">
-    <h3 id="pm-title">Pour map is under construction</h3>
-    <p>The pour map is still being built and tested. The pours drawn on it, and the details and percentages shown, may be incomplete or inaccurate. Please don&rsquo;t rely on it yet.</p>
-    <p class="pm-sub">Your dashboard figures are not affected.</p>
-    <div class="pm-actions">
-      <button type="button" class="pm-cancel" onclick="closePourMapNotice()">Cancel</button>
-      <button type="button" class="pm-go" onclick="goToPourMap()">I understand, open the pour map</button>
-    </div>
-  </div>
-</div>
 
 <script>
 // Schedule of values - contract rates by mix (03-30-150). Reference only;
@@ -779,28 +755,12 @@ function applySectionState() {
   SECTION_IDS.forEach(id => setSectionVisible(id, !state[id]));
 }
 function sectionKeys(e) {
-  if (e.key === 'Escape') { closeLevelMenu(); closePourMapNotice(); }
+  if (e.key === 'Escape') closeLevelMenu();
   if (e.key === 'Enter' || e.key === ' ') {
     const t = e.target && e.target.id;
     if (t && t.indexOf('sec-label-') === 0) { e.preventDefault(); toggleSection(t.slice('sec-label-'.length)); }
   }
 }
-
-// ---- Pour map: confirm before opening ----
-const POUR_MAP_URL = 'pour-map.html';
-function openPourMapNotice() {
-  const o = document.getElementById('pm-overlay');
-  o.hidden = false;
-  document.getElementById('pm-box').focus();
-}
-function closePourMapNotice() {
-  const o = document.getElementById('pm-overlay');
-  if (!o || o.hidden) return;
-  o.hidden = true;
-  const b = document.getElementById('pm-btn');
-  if (b) b.focus();
-}
-function goToPourMap() { window.location.href = POUR_MAP_URL; }
 
 // ---- Notes: why a level / category is over or under ----
 // Saved on the site (shared). Changes made in this browser are remembered for a few minutes and
@@ -1279,7 +1239,8 @@ async function toggleLevelComplete(code, confirmed) {
 
 // "Level balance" tile: shown when one or more levels are ticked in the level dropdown.
 // Adds up every category on the selected level(s) against its estimate, so over in one
-// category and under in another net out to one over/under figure.
+// category and under in another net out to one over/under figure. "Logged" is volume on POs
+// not yet ticked complete; "Projected" shows the balance if all of it is poured as logged.
 function renderLevelBalance() {
   const el = document.getElementById('level-balance');
   if (!el) return;
@@ -1295,15 +1256,24 @@ function renderLevelBalance() {
   const colorOf = n => n > 0.05 ? 'var(--red)' : (n < -0.05 ? 'var(--green)' : 'var(--text-secondary)');
   const sum = (arr, k) => arr.reduce((t, c) => t + c[k], 0);
   const pctOf = (n, base) => base > 0 ? ' (' + (n > 0 ? '+' : (n < 0 ? '\u2212' : '')) + Math.abs(n / base * 100).toFixed(1) + '%)' : '';
-  // Counted in the balance: every category once a level is complete; otherwise only
-  // categories that have started (an unpoured category is not "under", just not done yet).
+  const lg = c => c.pendingVolume || 0;
+  const MUTED = t => `<span style="color:var(--text-muted)">${t}</span>`;
+  const varHtml = (v, notBudgeted) => notBudgeted
+    ? `<span style="color:var(--red)">${sgn(v)} (not in estimate)</span>`
+    : `<span style="color:${colorOf(v)}">${sgn(v)}</span>`;
+  // Poured set ("so far"): every category once a level is complete, otherwise only categories that
+  // have poured volume. Projected set: also counts categories that only have logged volume.
   const calc = (l) => {
     const done = !!_levelStatus[l.level];
-    const cats = l.categories.filter(c => c.estimateVolume > 0 || c.actualVolume > 0);
+    const cats = l.categories.filter(c => c.estimateVolume > 0 || c.actualVolume > 0 || lg(c) > 0);
     const inBal = cats.filter(c => done || c.actualVolume > 0);
-    return { l, done, cats, inBal,
+    const proj = cats.filter(c => done || c.actualVolume > 0 || lg(c) > 0);
+    return { l, done, cats, inBal, proj,
       act: sum(inBal, 'actualVolume'), est: sum(inBal, 'estimateVolume'),
-      actC: sum(inBal, 'actualCost'), estC: sum(inBal, 'estimateCost') };
+      actC: sum(inBal, 'actualCost'), estC: sum(inBal, 'estimateCost'),
+      pAct: sum(proj, 'actualVolume'), pEst: sum(proj, 'estimateVolume'),
+      pActC: sum(proj, 'actualCost'), pEstC: sum(proj, 'estimateCost'),
+      logged: proj.reduce((t, c) => t + lg(c), 0), loggedC: proj.reduce((t, c) => t + (c.pendingCost || 0), 0) };
   };
   const costText = (actC, estC) => { const d = actC - estC; return `Cost: <strong>${money(actC)}</strong> vs ${money(estC)} estimated (<span style="color:${colorOf(d)}">${Math.abs(d) < 0.5 ? 'on estimate' : money(d) + (d > 0 ? ' over' : ' under')}</span>)`; };
   const whereText = (rows, actK, estK, nameK) => {
@@ -1315,6 +1285,19 @@ function renderLevelBalance() {
       ? `${overs.length ? 'Over in: <strong style="color:var(--red)">' + list(overs) + '</strong>. ' : ''}${unders.length ? 'Under in: <strong style="color:var(--green)">' + list(unders) + '</strong>.' : ''}`
       : 'Every category counted is right on its estimate.';
   };
+  const head = first => `<thead><tr><th>${first}</th><th>Poured m\u00b3</th><th>Logged m\u00b3</th><th>Estimate m\u00b3</th><th>Over / under</th><th>Projected over / under</th></tr></thead>`;
+  // t = { act, est, pAct, pEst, logged }
+  const foot = (t, done) => {
+    const net = t.act - t.est, pnet = t.pAct + t.logged - t.pEst, any = t.logged > 0;
+    return `<tfoot><tr><td>${done ? 'Total' : 'Counted so far'}</td><td>${f1(t.act)}</td><td>${any ? '' : '\u2014'}</td><td>${f1(t.est)}</td><td style="color:${colorOf(net)}">${sgn(net)}</td><td style="color:${colorOf(any ? pnet : net)}">${any ? '' : sgn(net)}</td></tr>`
+      + (any ? `<tr><td>Projected, with logged</td><td>${f1(t.pAct)}</td><td>${f1(t.logged)}</td><td>${f1(t.pEst)}</td><td></td><td style="color:${colorOf(pnet)}">${sgn(pnet)}</td></tr>` : '')
+      + '</tfoot>';
+  };
+  const projHeadline = (t) => {
+    const pnet = t.pAct + t.logged - t.pEst;
+    return `<span class="bal-proj" style="color:${colorOf(pnet)}">Projected (with ${f1(t.logged)} m\u00b3 logged): ${Math.abs(pnet) < 0.05 ? 'on estimate' : f1(Math.abs(pnet)) + ' m\u00b3 ' + (pnet > 0 ? 'over' : 'under')}${pctOf(pnet, t.pEst)}</span>`;
+  };
+  const projLine = (t) => `<div class="bal-sub">Projected if every logged pour goes ahead as logged: <strong>${f1(t.pAct + t.logged)} m\u00b3</strong> (${f1(t.pAct)} poured + ${f1(t.logged)} logged) vs ${f1(t.pEst)} m\u00b3 estimated &middot; ${costText(t.pActC + t.loggedC, t.pEstC)}. Logged = POs in the Concrete Log that are not ticked &ldquo;Completed by Site Team&rdquo; yet.</div>`;
 
   const items = ls.codes.map(code => ({ code, l: _levels.find(x => x.level === code) }));
 
@@ -1324,35 +1307,40 @@ function renderLevelBalance() {
     if (!l) { setBalance(`<div class="bal-card"><span class="bal-title">${code} balance</span><div class="bal-sub">No data for this level yet.</div></div>`); return; }
     if (!l.estimateMapped) {
       setBalance(`<div class="bal-card"><div class="bal-head"><span class="bal-title">${l.level} balance</span></div>
-        <div class="bal-sub">This level is not in the takeoff, so there is no estimate to balance against. Poured so far: ${f1(l.actualVolume)} m\u00b3 &middot; ${money(l.actualCost)}.</div></div>`);
+        <div class="bal-sub">This level is not in the takeoff, so there is no estimate to balance against. Poured so far: ${f1(l.actualVolume)} m\u00b3 &middot; ${money(l.actualCost)}${l.pendingVolume > 0 ? '; logged, not yet complete: ' + f1(l.pendingVolume) + ' m\u00b3' : ''}.</div></div>`);
       return;
     }
     const c1 = calc(l);
     const net = c1.act - c1.est;
+    const any = c1.logged > 0;
     const nothingYet = !c1.done && c1.inBal.length === 0;
     const word = Math.abs(net) < 0.05 ? 'on estimate' : (net > 0 ? 'over' : 'under');
     const fullPct = l.estimateVolume > 0 ? (l.actualVolume / l.estimateVolume * 100).toFixed(1) : null;
     const rows = c1.cats.map(c => {
-      const v = c.actualVolume - c.estimateVolume;
-      const notStarted = !c1.done && c.actualVolume === 0;
-      const varCell = notStarted
-        ? '<span style="color:var(--text-muted)">not started</span>'
-        : (c.estimateVolume === 0 ? `<span style="color:var(--red)">${sgn(v)} (not in estimate)</span>` : `<span style="color:${colorOf(v)}">${sgn(v)}</span>`);
-      return `<tr class="${notStarted ? 'notcounted' : ''}"><td>${c.category}</td><td>${f1(c.actualVolume)}</td><td>${c.estimateVolume > 0 ? f1(c.estimateVolume) : '\u2014'}</td><td>${varCell}</td></tr>`;
+      const logged = lg(c), v = c.actualVolume - c.estimateVolume, pv = c.actualVolume + logged - c.estimateVolume;
+      const noPoured = !c1.done && c.actualVolume === 0;
+      const noneAtAll = noPoured && logged === 0;
+      const overUnder = noPoured ? MUTED(logged > 0 ? 'none poured yet' : 'not started') : varHtml(v, c.estimateVolume === 0);
+      const projected = noneAtAll ? MUTED('\u2014') : varHtml(pv, c.estimateVolume === 0);
+      return `<tr class="${noneAtAll ? 'notcounted' : ''}"><td>${c.category}</td><td>${f1(c.actualVolume)}</td><td>${logged > 0 ? f1(logged) : '\u2014'}</td><td>${c.estimateVolume > 0 ? f1(c.estimateVolume) : '\u2014'}</td><td>${overUnder}</td><td>${projected}</td></tr>`;
     }).join('');
     setBalance(`
       <div class="bal-card">
         <div class="bal-head">
           <span class="bal-title">${l.level} balance across all categories${c1.done ? ' <span class="lvl-badge">\u2713 level complete</span>' : ''}</span>
-          <span class="bal-net" style="color:${nothingYet ? 'var(--text-muted)' : colorOf(net)}">${nothingYet ? 'Not started' : (c1.done ? 'Final' : 'So far') + ': ' + (Math.abs(net) < 0.05 ? 'on estimate' : f1(Math.abs(net)) + ' m\u00b3 ' + word) + pctOf(net, c1.est)}</span>
+          <span class="bal-net-wrap">
+            <span class="bal-net" style="color:${nothingYet ? 'var(--text-muted)' : colorOf(net)}">${nothingYet ? 'Not started' : (c1.done ? 'Final' : 'So far') + ': ' + (Math.abs(net) < 0.05 ? 'on estimate' : f1(Math.abs(net)) + ' m\u00b3 ' + word) + pctOf(net, c1.est)}</span>
+            ${any ? projHeadline(c1) : ''}
+          </span>
         </div>
         <div class="bal-sub">${nothingYet ? 'No category on this level has been poured yet.' : whereText(c1.inBal, 'actualVolume', 'estimateVolume', 'category')}</div>
         ${nothingYet ? '' : `<div class="bal-sub">Volume counted: <strong>${f1(c1.act)} m\u00b3</strong> poured vs ${f1(c1.est)} m\u00b3 estimated &middot; ${costText(c1.actC, c1.estC)}</div>`}
+        ${any ? projLine(c1) : ''}
         ${c1.done ? '' : `<div class="bal-sub">Level not marked complete: only categories that have started are counted, so unpoured categories don't show as under. Whole level so far: ${f1(l.actualVolume)} of ${f1(l.estimateVolume)} m\u00b3${fullPct !== null ? ' (' + fullPct + '%)' : ''}.</div>`}
         <table class="bal-table">
-          <thead><tr><th>Category</th><th>Poured m\u00b3</th><th>Estimate m\u00b3</th><th>Over / under</th></tr></thead>
+          ${head('Category')}
           <tbody>${rows}</tbody>
-          <tfoot><tr><td>${c1.done ? 'Level total' : 'Counted total'}</td><td>${f1(c1.act)}</td><td>${f1(c1.est)}</td><td style="color:${colorOf(net)}">${sgn(net)}</td></tr></tfoot>
+          ${foot(c1, c1.done)}
         </table>
       </div>`);
     return;
@@ -1364,54 +1352,64 @@ function renderLevelBalance() {
   const unmapped = withData.filter(l => !l.estimateMapped);
   const noData = items.filter(i => !i.l).map(i => i.code);
   const counted = mapped.filter(p => p.inBal.length > 0);
+  const projLevels = mapped.filter(p => p.proj.length > 0);
   const allDone = mapped.length > 0 && mapped.every(p => p.done);
   const doneCount = mapped.filter(p => p.done).length;
-  const act = sum(counted, 'act'), est = sum(counted, 'est'), actC = sum(counted, 'actC'), estC = sum(counted, 'estC');
-  const net = act - est;
+  const T = {
+    act: sum(counted, 'act'), est: sum(counted, 'est'), actC: sum(counted, 'actC'), estC: sum(counted, 'estC'),
+    pAct: sum(projLevels, 'pAct'), pEst: sum(projLevels, 'pEst'), pActC: sum(projLevels, 'pActC'), pEstC: sum(projLevels, 'pEstC'),
+    logged: sum(projLevels, 'logged'), loggedC: sum(projLevels, 'loggedC')
+  };
+  const net = T.act - T.est;
+  const any = T.logged > 0;
   const nothingYet = counted.length === 0;
   const catMap = {};
-  counted.forEach(p => p.inBal.forEach(c => {
-    const m = catMap[c.category] || (catMap[c.category] = { category: c.category, act: 0, est: 0 });
-    m.act += c.actualVolume; m.est += c.estimateVolume;
+  projLevels.forEach(p => p.proj.forEach(c => {
+    const m = catMap[c.category] || (catMap[c.category] = { category: c.category, act: 0, est: 0, counted: false, pAct: 0, pEst: 0, logged: 0 });
+    m.pAct += c.actualVolume; m.pEst += c.estimateVolume; m.logged += lg(c);
+    if (p.done || c.actualVolume > 0) { m.act += c.actualVolume; m.est += c.estimateVolume; m.counted = true; }
   }));
-  const catRows = Object.values(catMap).sort((a, b) => Math.max(b.act, b.est) - Math.max(a.act, a.est));
+  const catRows = Object.values(catMap).sort((a, b) => Math.max(b.pAct + b.logged, b.pEst) - Math.max(a.pAct + a.logged, a.pEst));
   const fullAct = sum(mapped.map(p => p.l), 'actualVolume'), fullEst = sum(mapped.map(p => p.l), 'estimateVolume');
   const fullPct = fullEst > 0 ? (fullAct / fullEst * 100).toFixed(1) : null;
   const title = (ls.isAll ? 'All levels' : levelLabel(ls.codes)) + ' balance across all categories';
   const word = Math.abs(net) < 0.05 ? 'on estimate' : (net > 0 ? 'over' : 'under');
 
   const catHtml = catRows.map(c => {
-    const v = c.act - c.est;
-    const cell = c.est === 0 ? `<span style="color:var(--red)">${sgn(v)} (not in estimate)</span>` : `<span style="color:${colorOf(v)}">${sgn(v)}</span>`;
-    return `<tr><td>${c.category}</td><td>${f1(c.act)}</td><td>${c.est > 0 ? f1(c.est) : '\u2014'}</td><td>${cell}</td></tr>`;
+    const v = c.act - c.est, pv = c.pAct + c.logged - c.pEst;
+    return `<tr><td>${c.category}</td><td>${f1(c.act)}</td><td>${c.logged > 0 ? f1(c.logged) : '\u2014'}</td><td>${c.est > 0 ? f1(c.est) : '\u2014'}</td><td>${c.counted ? varHtml(v, c.est === 0) : MUTED('none poured yet')}</td><td>${varHtml(pv, c.pEst === 0)}</td></tr>`;
   }).join('');
   const levelHtml = mapped.map(p => {
     const name = p.l.level + (p.done ? ' <span class="lvl-badge">\u2713 complete</span>' : '');
-    if (p.inBal.length === 0) return `<tr class="notcounted"><td>${name}</td><td>${f1(p.l.actualVolume)}</td><td>${f1(p.l.estimateVolume)}</td><td>not started</td></tr>`;
-    const v = p.act - p.est;
-    return `<tr><td>${name}</td><td>${f1(p.act)}</td><td>${f1(p.est)}</td><td style="color:${colorOf(v)}">${sgn(v)}</td></tr>`;
-  }).join('') + unmapped.map(l => `<tr class="notcounted"><td>${l.level}</td><td>${f1(l.actualVolume)}</td><td>\u2014</td><td>not in takeoff</td></tr>`).join('');
+    if (p.proj.length === 0) return `<tr class="notcounted"><td>${name}</td><td>${f1(p.l.actualVolume)}</td><td>\u2014</td><td>${f1(p.l.estimateVolume)}</td><td>not started</td><td>\u2014</td></tr>`;
+    const v = p.act - p.est, pv = p.pAct + p.logged - p.pEst;
+    return `<tr><td>${name}</td><td>${f1(p.act)}</td><td>${p.logged > 0 ? f1(p.logged) : '\u2014'}</td><td>${f1(p.est)}</td><td>${p.inBal.length ? `<span style="color:${colorOf(v)}">${sgn(v)}</span>` : MUTED('none poured yet')}</td><td><span style="color:${colorOf(pv)}">${sgn(pv)}</span></td></tr>`;
+  }).join('') + unmapped.map(l => `<tr class="notcounted"><td>${l.level}</td><td>${f1(l.actualVolume)}</td><td>${l.pendingVolume > 0 ? f1(l.pendingVolume) : '\u2014'}</td><td>\u2014</td><td>not in takeoff</td><td>\u2014</td></tr>`).join('');
 
   setBalance(`
     <div class="bal-card">
       <div class="bal-head">
         <span class="bal-title">${title}${allDone ? ' <span class="lvl-badge">\u2713 all complete</span>' : ''}</span>
-        <span class="bal-net" style="color:${nothingYet ? 'var(--text-muted)' : colorOf(net)}">${nothingYet ? 'Not started' : (allDone ? 'Final' : 'So far') + ': ' + (Math.abs(net) < 0.05 ? 'on estimate' : f1(Math.abs(net)) + ' m\u00b3 ' + word) + pctOf(net, est)}</span>
+        <span class="bal-net-wrap">
+          <span class="bal-net" style="color:${nothingYet ? 'var(--text-muted)' : colorOf(net)}">${nothingYet ? 'Not started' : (allDone ? 'Final' : 'So far') + ': ' + (Math.abs(net) < 0.05 ? 'on estimate' : f1(Math.abs(net)) + ' m\u00b3 ' + word) + pctOf(net, T.est)}</span>
+          ${any ? projHeadline(T) : ''}
+        </span>
       </div>
-      <div class="bal-sub">${nothingYet ? 'Nothing has been poured on the selected levels yet.' : whereText(catRows, 'act', 'est', 'category')}</div>
-      ${nothingYet ? '' : `<div class="bal-sub">Volume counted: <strong>${f1(act)} m\u00b3</strong> poured vs ${f1(est)} m\u00b3 estimated &middot; ${costText(actC, estC)}</div>`}
+      <div class="bal-sub">${nothingYet ? 'Nothing has been poured on the selected levels yet.' : whereText(catRows.filter(c => c.counted), 'act', 'est', 'category')}</div>
+      ${nothingYet ? '' : `<div class="bal-sub">Volume counted: <strong>${f1(T.act)} m\u00b3</strong> poured vs ${f1(T.est)} m\u00b3 estimated &middot; ${costText(T.actC, T.estC)}</div>`}
+      ${any ? projLine(T) : ''}
       <div class="bal-sub">${doneCount} of ${mapped.length} selected level${mapped.length === 1 ? '' : 's'} marked complete. Levels not marked complete only count categories that have started, so unpoured categories don't show as under. Selected levels so far: ${f1(fullAct)} of ${f1(fullEst)} m\u00b3${fullPct !== null ? ' (' + fullPct + '%)' : ''}.</div>
       ${unmapped.length ? `<div class="bal-sub">Not counted (not in the takeoff): ${unmapped.map(l => l.level + ' (' + f1(l.actualVolume) + ' m\u00b3 poured)').join(', ')}.</div>` : ''}
       ${noData.length ? `<div class="bal-sub">No data yet for: ${noData.join(', ')}.</div>` : ''}
-      ${nothingYet ? '' : `<div class="bal-sec">By category (all selected levels combined)</div>
+      ${catRows.length ? `<div class="bal-sec">By category (all selected levels combined)</div>
       <table class="bal-table">
-        <thead><tr><th>Category</th><th>Poured m\u00b3</th><th>Estimate m\u00b3</th><th>Over / under</th></tr></thead>
+        ${head('Category')}
         <tbody>${catHtml}</tbody>
-        <tfoot><tr><td>Counted total</td><td>${f1(act)}</td><td>${f1(est)}</td><td style="color:${colorOf(net)}">${sgn(net)}</td></tr></tfoot>
-      </table>`}
+        ${foot(T, allDone)}
+      </table>` : ''}
       <div class="bal-sec">By level</div>
       <table class="bal-table">
-        <thead><tr><th>Level</th><th>Poured m\u00b3</th><th>Estimate m\u00b3</th><th>Over / under</th></tr></thead>
+        ${head('Level')}
         <tbody>${levelHtml}</tbody>
       </table>
     </div>`);
