@@ -536,6 +536,8 @@ const ctx=canvas.getContext('2d');
 const wrap=document.getElementById('canvas-wrap');
 let bg=new Image(), scale=1;
 let currentPts=[], pours=[], selected=null, tool='draw', smData=null;
+let hoverPt=null, hoverRaf=0; // live cursor position while drawing
+const CLOSE_PX = 14;      // how close (screen px) to the first dot counts as 'finish here'
 let currentLevel='P2', pendingPts=null, redrawingId=null;
 
 bg = new Image();
@@ -558,10 +560,59 @@ function render(){
   const hasFocus=!!selected;
   levelPours.forEach(p=>drawPour(p,p===selected,hasFocus&&p!==selected));
   if(currentPts.length>0){
-    ctx.beginPath();ctx.moveTo(currentPts[0].x*scale,currentPts[0].y*scale);
-    currentPts.forEach(pt=>ctx.lineTo(pt.x*scale,pt.y*scale));
-    ctx.strokeStyle='#1a6bff';ctx.lineWidth=2;ctx.setLineDash([5,3]);ctx.stroke();ctx.setLineDash([]);
-    currentPts.forEach(pt=>{ctx.beginPath();ctx.arc(pt.x*scale,pt.y*scale,4,0,Math.PI*2);ctx.fillStyle='#1a6bff';ctx.fill();});
+    const pts=currentPts;
+    const hp=(hoverPt&&tool==='draw'&&editorMode)?hoverPt:null;
+    const closeHint=!!(hp&&pts.length>=3&&nearFirstPoint(hp));
+    const X=p=>p.x*scale, Y=p=>p.y*scale;
+    const first=pts[0], last=pts[pts.length-1];
+
+    // Light fill preview of the area outlined so far (including the cursor)
+    const outline=(hp&&!closeHint)?[...pts,hp]:pts;
+    if(outline.length>=3){
+      ctx.beginPath();ctx.moveTo(X(outline[0]),Y(outline[0]));
+      outline.forEach(p=>ctx.lineTo(X(p),Y(p)));ctx.closePath();
+      ctx.fillStyle='rgba(26,107,255,0.14)';ctx.fill();
+    }
+    // Edges already placed (solid)
+    if(pts.length>=2){
+      ctx.beginPath();ctx.moveTo(X(first),Y(first));
+      pts.forEach(p=>ctx.lineTo(X(p),Y(p)));
+      ctx.setLineDash([]);ctx.strokeStyle='#1a6bff';ctx.lineWidth=2.5;ctx.stroke();
+    }
+    if(hp&&!closeHint){
+      // Live edge: last dot -> cursor
+      ctx.setLineDash([7,4]);ctx.strokeStyle='#1a6bff';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(X(last),Y(last));ctx.lineTo(X(hp),Y(hp));ctx.stroke();
+      // Faint closing edge: cursor -> first dot (shows the shape if you finished here)
+      if(pts.length>=2){
+        ctx.setLineDash([3,5]);ctx.strokeStyle='rgba(26,107,255,0.45)';ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.moveTo(X(hp),Y(hp));ctx.lineTo(X(first),Y(first));ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+    if(closeHint){
+      // Cursor is on the first dot: show the closing edge solid green
+      ctx.setLineDash([]);ctx.strokeStyle='#2e9e4f';ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.moveTo(X(last),Y(last));ctx.lineTo(X(first),Y(first));ctx.stroke();
+    }
+    // Dots: first = ring (turns green when you can finish), last = larger
+    pts.forEach((p,i)=>{
+      const isFirst=i===0, isLast=i===pts.length-1;
+      const r=isFirst?7:(isLast?6:4.5);
+      ctx.beginPath();ctx.arc(X(p),Y(p),r,0,Math.PI*2);
+      ctx.fillStyle=(isFirst&&closeHint)?'#2e9e4f':(isFirst?'#ffffff':'#1a6bff');
+      ctx.fill();
+      ctx.lineWidth=2;ctx.strokeStyle=(isFirst&&closeHint)?'#ffffff':'#1a6bff';ctx.stroke();
+    });
+    if(hp){
+      // Small hint label next to the cursor
+      const msg=closeHint?'Click to finish':(pts.length>=3?'Click to add \u00b7 double-click to finish':'Click to add a point');
+      ctx.font='bold 11px sans-serif';ctx.textAlign='left';ctx.textBaseline='middle';
+      const tw=ctx.measureText(msg).width, bx=X(hp)+16, by=Y(hp)+18;
+      ctx.fillStyle='rgba(255,255,255,0.92)';ctx.fillRect(bx-5,by-9,tw+10,18);
+      ctx.strokeStyle=closeHint?'#2e9e4f':'#1a6bff';ctx.lineWidth=1;ctx.strokeRect(bx-5,by-9,tw+10,18);
+      ctx.fillStyle=closeHint?'#1f7a3a':'#1a4fb3';ctx.fillText(msg,bx,by);
+    }
   }
 }
 
@@ -706,8 +757,10 @@ function hexRgb(hex){return hex?[parseInt(hex.slice(1,3),16),parseInt(hex.slice(
 canvas.addEventListener('click',e=>{
   const pt=evtPt(e);
   if(tool==='draw' && editorMode){
+    // Single click on the first dot (once there are 3+ points) finishes the shape
+    if(currentPts.length>=3 && e.detail===1 && nearFirstPoint(pt)){ finishDraw(); return; }
     currentPts.push(pt);render();
-    setStatus(`${currentPts.length} points -- double-click to close and link PO`);
+    setStatus(`${currentPts.length} point${currentPts.length===1?'':'s'} -- click the first dot or double-click to finish`);
     document.getElementById('cancel-btn').style.display='';
     document.getElementById('undo-btn').style.display='';
   } else {
@@ -725,31 +778,55 @@ canvas.addEventListener('click',e=>{
 canvas.addEventListener('dblclick',e=>{
   if(!editorMode) return;
   if(tool==='draw'&&currentPts.length>=3){
-    currentPts.pop();
-    if(redrawingId){
-      // Save new polygon to existing pour
-      const p=pours.find(x=>x.id===redrawingId);
-      if(p){
-        // Replace the last shape (most recently added) or the only shape
-        const shapes=p.shapes||[p.points].filter(Boolean);
-        if(shapes.length>0) shapes[shapes.length-1]=[...currentPts];
-        else shapes.push([...currentPts]);
-        p.shapes=shapes;
-        p.points=shapes[0];
-        persistPour(p);
-      }
-      redrawingId=null;
-      currentPts=[];
-      setTool('select');
-      ['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');
-      setStatus('Polygon updated');
-      buildPourList();
-      render();
-    } else {
-      openForm();
-    }
+    currentPts.pop();   // the double-click's second click added a duplicate point
+    finishDraw();
   }
 });
+
+// Mouse tracking for the live drawing preview
+canvas.addEventListener('mousemove',e=>{
+  if(!(tool==='draw'&&editorMode&&currentPts.length>0)){ hoverPt=null; return; }
+  hoverPt=evtPt(e);
+  if(!hoverRaf) hoverRaf=requestAnimationFrame(()=>{ hoverRaf=0; render(); });
+});
+canvas.addEventListener('mouseleave',()=>{
+  hoverPt=null;
+  if(currentPts.length>0) render();
+});
+
+function nearFirstPoint(pt){
+  if(currentPts.length<3) return false;
+  const f=currentPts[0];
+  return Math.hypot((pt.x-f.x)*scale,(pt.y-f.y)*scale) < CLOSE_PX;
+}
+
+// Close the shape being drawn: save it as a redraw, or open the PO form
+function finishDraw(){
+  if(currentPts.length<3){ setStatus('A pour area needs at least 3 points'); return; }
+  hoverPt=null;
+  if(redrawingId){
+    // Save new polygon to existing pour
+    const p=pours.find(x=>x.id===redrawingId);
+    if(p){
+      // Replace the last shape (most recently added) or the only shape
+      const shapes=p.shapes||[p.points].filter(Boolean);
+      if(shapes.length>0) shapes[shapes.length-1]=[...currentPts];
+      else shapes.push([...currentPts]);
+      p.shapes=shapes;
+      p.points=shapes[0];
+      persistPour(p);
+    }
+    redrawingId=null;
+    currentPts=[];
+    setTool('select');
+    ['cancel-btn','undo-btn'].forEach(id=>document.getElementById(id).style.display='none');
+    setStatus('Polygon updated');
+    buildPourList();
+    render();
+  } else {
+    openForm();
+  }
+}
 function evtPt(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)/scale,y:(e.clientY-r.top)/scale};}
 function ptIn(pt,pts){
   let inside=false;
