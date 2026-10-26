@@ -35,7 +35,7 @@ function sanitize(c) {
     const dash = str(l.dash, 8);
     if (dash && !/^[A-Za-z0-9]{1,8}$/.test(dash)) throw new Error('Dashboard code "' + dash + '" must be 1-8 letters or digits.');
     const fallback = str(l.fallback, 60);
-    return { code, name: str(l.name, 50) || "Level " + code, dash, fallback: /^[\w.-]{1,60}$/.test(fallback) ? fallback : "" };
+    return { code, name: str(l.name, 50) || "Level " + code, dash, note: str(l.note, 200), fallback: /^[\w.-]{1,60}$/.test(fallback) ? fallback : "" };
   });
 
   if (!Array.isArray(c.pourTypes) || c.pourTypes.length < 1 || c.pourTypes.length > 20) throw new Error("Add between 1 and 20 pour types.");
