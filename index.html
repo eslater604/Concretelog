@@ -262,6 +262,7 @@
   .bal-net { font-size: 18px; font-weight: 700; }
   .bal-net-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
   .bal-proj { font-size: 13px; font-weight: 600; }
+  .bal-hard-note { margin-top: 12px; padding: 8px 12px; background: #FAEEDA; border-left: 3px solid var(--amber); border-radius: 6px; font-size: 12px; color: var(--text); }
   .bal-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
   .bal-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
   .bal-table th { text-align: right; font-weight: 600; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; padding: 4px 6px; border-bottom: 1px solid var(--border); }
@@ -424,7 +425,7 @@
           <li>It appears above the cards as soon as you tick a level. It adds up <strong>every category</strong> on the selected level(s) against the estimate, so being over on columns and under on slabs nets out to one over or under figure.</li>
           <li>The headline shows the net, for example &ldquo;So far: 6.3 m&sup3; under&rdquo;. Under it you see which categories are over and which are under, plus the volume and cost counted.</li>
           <li><strong>Level not marked complete:</strong> only categories that have started are counted, so an unpoured category does not show as &ldquo;under&rdquo;. <strong>Level marked complete:</strong> the headline says &ldquo;Final&rdquo; and every budgeted category counts, including ones never poured.</li>
-          <li><strong>Logged</strong> is volume on POs that are in the Concrete Log but not ticked complete yet. <strong>Projected over / under</strong> (last column, and the smaller line under the headline) adds the logged volume to what has been poured, to give a rough idea of where the level will land if everything logged goes ahead as logged. It is an indication only: logged volumes can still change. Once a level is <strong>marked complete</strong> its figures are final, so the projected columns, the projected headline line and the projected total disappear for it.</li>
+          <li><strong>Logged</strong> is volume on POs that are in the Concrete Log but not ticked complete yet. <strong>Projected over / under</strong> (last column, and the smaller line under the headline) adds the logged volume to what has been poured, to give a rough idea of where the level will land if everything logged goes ahead as logged. It is an indication only: logged volumes can still change. Projected volumes also include back up pours, so the projected over / under will change as pours take place and back ups are removed (a note above the Notes area says this). Once a level is <strong>marked complete</strong> its figures are final, so the projected columns, the projected headline line, the projected total and that note disappear for it.</li>
           <li>With several levels ticked, the tile combines them, with a <strong>By category</strong> table and a <strong>By level</strong> table.</li>
         </ul></div>
       </details>
@@ -1262,7 +1263,10 @@ function renderLevelBalance() {
   const ls = levelSelection();
   if (ls.none) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = '';
-  const setBalance = (html) => { el.innerHTML = html.replace(/<\/div>\s*$/, notesBlockHtml(ls) + '</div>'); };
+  // A fixed reminder above the Notes area whenever projected figures are on show.
+  let projNoteOn = false;
+  const PROJ_NOTE = '<div class="bal-hard-note">Projected volumes also include back up pours, so overall projected over/under will change as pours take place and back ups are removed.</div>';
+  const setBalance = (html) => { el.innerHTML = html.replace(/<\/div>\s*$/, (projNoteOn ? PROJ_NOTE : '') + notesBlockHtml(ls) + '</div>'); };
 
   const f1 = n => n.toLocaleString(undefined, { maximumFractionDigits: 1 });
   const money = n => '$' + Math.round(Math.abs(n)).toLocaleString();
@@ -1332,6 +1336,7 @@ function renderLevelBalance() {
     const net = c1.act - c1.est;
     const any = c1.logged > 0;
     const showProj = !c1.done;                       // a completed level is final: no projection
+    projNoteOn = showProj;
     const nothingYet = !c1.done && c1.inBal.length === 0;
     const word = Math.abs(net) < 0.05 ? 'on estimate' : (net > 0 ? 'over' : 'under');
     const fullPct = l.estimateVolume > 0 ? (l.actualVolume / l.estimateVolume * 100).toFixed(1) : null;
@@ -1383,6 +1388,7 @@ function renderLevelBalance() {
   const net = T.act - T.est;
   const any = T.logged > 0;
   const showProj = !allDone;                         // every selected level complete: all final, no projection
+  projNoteOn = showProj;
   const nothingYet = counted.length === 0;
   const catMap = {};
   projLevels.forEach(p => p.proj.forEach(c => {
