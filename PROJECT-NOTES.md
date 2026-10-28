@@ -2,7 +2,7 @@
 
 Hand-off notes for Claude and for Eric. Upload this file, plus the current project folder, at the start of ANY new conversation about the dashboard or the pour map. Ask Claude at the end of each session to update it.
 
-Last updated: Oct 26, 2026. Sources: the dashboard conversation and the pour map conversation (written up from what each produced).
+Last updated: Oct 27, 2026. Sources: the dashboard conversation and the pour map conversation (written up from what each produced).
 
 ## 1. What exists
 
@@ -23,6 +23,11 @@ Last updated: Oct 26, 2026. Sources: the dashboard conversation and the pour map
 | `netlify/functions/level-notes.js` | Saves and loads notes | Dashboard |
 | `netlify/functions/load-pours.js`, `save-pour.js`, `delete-pour.js` | Store pours drawn on the map | Pour map |
 | `netlify/functions/load-drawing.js`, `save-drawing.js` | Store the drawing uploaded for each level | Pour map |
+| `netlify/functions/add-comment.js`, `load-comments.js`, `delete-comment.js` | Comments on pours | Pour map |
+| `netlify/functions/save-report.js`, `load-reports.js`, `delete-report.js`, `get-report-file.js` | Lab test reports and their PDFs | Pour map |
+| `netlify/functions/get-config.js`, `save-config.js`, `get-logo.js`, `save-logo.js` | Pour map "Site setup" (names, levels, pour types, locations) and logo | Pour map |
+| `netlify/functions/verify-edit.js`, `change-password.js`, `lib/auth.js` | Edit-mode password | Pour map |
+| `pdf-lib.min.js`, `P2_FDN_clean.png` | PDF reader for Import pours; built-in P2 drawing | Pour map |
 | `netlify.toml`, `package.json` | Site settings; `@netlify/blobs` dependency (without `package.json` the storage functions fail with 500/502) | Both |
 
 Netlify setting needed: `SMARTSHEET_API_TOKEN`.
@@ -57,6 +62,7 @@ Netlify setting needed: `SMARTSHEET_API_TOKEN`.
 - Level completion section: Mark complete and Reopen, each with a confirmation step. Completed levels are final.
 - Notes (in the balance tile): add and delete (delete needs confirmation); the first note also shows on the matching card.
 - Mix-line list (whole project, or for the selection), Schedule of Values panel, Help panel, collapsible sections, Pour map button with warning pop-up.
+- **Tower progress** section (added Oct 27, placed first on the page so it is visible when the page opens; it loads the completion marks on its own, without waiting for the Smartsheet sync): the tower model photo is embedded in `index.html` (a JPEG as a data URI, so no extra file to upload). It shows grey and ghosted; each level marked complete turns its storey to full colour. The photo shows 24 storeys under the roof deck (the timber-clad ground storey plus 23 glazed floors), the roof deck, and a two-block penthouse, matching L1 to L27 plus Roof in the takeoff. Each coloured band is the storey whose floor is that level's slab (L1 = ground storey, L25 = roof deck, L26 and L27 = penthouse blocks, Roof = cap). The slab-line positions were measured on the photo (`TOWER_SLABS` in `index.html`); the penthouse and roof-deck outlines are estimated. To change the photo, the numbers need re-measuring.
 
 ## 6. Pour map features (as built in the other conversation)
 
@@ -68,6 +74,7 @@ Netlify setting needed: `SMARTSHEET_API_TOKEN`.
 
 ## 7. Technical things learned (do not repeat these mistakes)
 
+- **The pour map's comment, report, Site setup and logo functions had asked for strong consistency**, which fails on this site ("BlobsConsistencyError ... uncachedEdgeURL"). Fixed Oct 27: none of them request it now. Comments and reports are never overwritten (a deleted one leaves a small "del" record that wins if newer); Site setup saves as `config__<time>` and the logo as `logo__<version>` (newest wins). The page also remembers recent changes in this browser for 5 minutes (`pm-recent-comments`, `pm-recent-reports`, `pm-recent-config`). Tests that use a stand-in for storage must make the stand-in refuse strong consistency, or they will pass while the live site fails.
 - Netlify Blobs here is only eventually consistent: a new record can be read at once, but an overwrite or delete can show the old value for about a minute, and the listing can lag. **Strong consistency does not work** in these functions (it needs a setting they are not given). So level marks and notes are stored as new records (never overwritten), and the page lays recent changes made in the same browser over the server's list for 5 minutes.
 - If the server cannot be reached, marks and notes are kept in the browser (localStorage) and shown with an amber banner. Notes are sent to the server automatically when it is back.
 - Browser storage keys: `concretelog.levelStatus.v1`, `concretelog.levelRecent.v1`, `concretelog.notesLocal.v1`, `concretelog.notesRecent.v1`, `concretelog.noteName.v1`, `concretelog.collapsed.v1`.
@@ -82,7 +89,9 @@ Netlify setting needed: `SMARTSHEET_API_TOKEN`.
 5. **PO 3083C:** blinding on L1 (10 m3). Correct level?
 6. **PO 3047C:** Level is P1 but the note says P2.
 7. **Rounding:** the estimate file rounds Walls down on 25 levels (net about 2.1 m3 low). Optional fix: regenerate from exact takeoff values.
-8. Whether the pour map should also merge P1a into P1.
+8. Whether the pour map should also merge P1a into P1. (The pour map conversation added a per-level note instead: "The volumes for Level P1a are factored into the Level P1 volume counts".)
+9. **Edit password changes:** `lib/auth.js` overwrites one record, so for up to about a minute after a change the old password may still work and the new one may be refused. The master code is unaffected. Not changed yet.
+10. Pours and drawings (`save-pour`, `delete-pour`, `save-drawing`) use the normal setting and overwrite or delete records, so a reload within about a minute of an edit can show the older state. They work; they have not been given the same treatment as comments.
 
 ## 9. Working agreement for conversations
 
