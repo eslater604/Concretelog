@@ -469,7 +469,7 @@
           <li>A completed level gets a green &ldquo;&#10003; complete&rdquo; tag, and its balance becomes the <strong>Final</strong> over or under. The top of the section adds up all completed levels, with volume and cost over or under the estimate.</li>
           <li><strong>Reopen</strong> needs a second click on <strong>Yes, reopen</strong>, so a level cannot be reopened by accident. <strong>Cancel</strong> keeps it complete.</li>
           <li>Marks are saved on the site and shared. On another device they can take up to a minute to appear.</li>
-          <li><strong>Tower progress</strong> (at the top of the page) shows the tower photo in grey. Each level you mark complete turns its floor to full colour, so you can see the building filling in. Hover over the tower for a level's status. Each coloured band is the storey whose floor is that level's slab; L25 is the roof deck, L26 and L27 are the penthouse blocks.</li>
+          <li><strong>Tower progress</strong> (at the top of the page) shows the model photo. The tower and the front pavilion stay grey until their levels are marked complete, and each level you mark complete turns its floor to full colour, so you can see the building filling in. The surroundings are always in colour. Hover over the building for a level's status. Each coloured band is the storey whose floor is that level's slab; L25 is the roof deck and L26 and L27 are the penthouse blocks. The front pavilion goes with L1 (ground storey), L2 (upper storey) and L3 (roof). P2 and P1 are below ground and not in the photo, so they count in the total but are not drawn.</li>
           <li>If a level is marked complete but some of its POs are still not ticked complete in the log, a warning tells you the final figures may still change.</li>
         </ul></div>
       </details>
@@ -1531,24 +1531,33 @@ function towerAlong(n, x0, x1, steps) {                   // points along slab l
   return pts;
 }
 function towerBands() {
+  // bands[level] = a list of outlines (the tower storey, plus the front pavilion's matching part where there is one)
   const bands = {};
   const L = 150;                                          // left edge of the tower
   for (let n = 2; n <= 24; n++) {
     const R = n <= 3 ? 352 : 402;                         // the low-rise building hides the right side of the lowest floors
-    const top = towerAlong(n + 1, L, R, 8), bottom = towerAlong(n, R, L, 8);
-    bands['L' + n] = top.concat(bottom);
+    bands['L' + n] = [towerAlong(n + 1, L, R, 8).concat(towerAlong(n, R, L, 8))];
   }
   // L1: the timber-clad ground storey, from the L2 slab line down to the ground line
-  bands['L1'] = towerAlong(2, L, 345, 6).concat([[345, 602], [300, 606], [262, 611], [240, 606], [200, 597], [L, 589]]);
+  bands['L1'] = [towerAlong(2, L, 345, 6).concat([[345, 602], [300, 606], [262, 611], [240, 606], [200, 597], [L, 589]])];
   // L25: the roof deck, from the guard-rail top down to the underside of the roof slab
-  bands['L25'] = [[L, 69], [200, 64], [250, 60], [300, 60], [345, 62], [377, 64], [402, 67]].concat(towerAlong(25, 402, L, 8));
+  bands['L25'] = [[[L, 69], [200, 64], [250, 60], [300, 60], [345, 62], [377, 64], [402, 67]].concat(towerAlong(25, 402, L, 8))];
   // L26, L27 and Roof: the two penthouse blocks and the cap on top
-  bands['L26'] = [[242, 34], [307, 34], [307, 62], [242, 62]];
-  bands['L27'] = [[242, 17], [307, 17], [307, 34], [242, 34]];
-  bands['Roof'] = [[242, 8], [308, 8], [308, 17], [242, 17]];
+  bands['L26'] = [[[242, 34], [307, 34], [307, 62], [242, 62]]];
+  bands['L27'] = [[[242, 17], [307, 17], [307, 34], [242, 34]]];
+  bands['Roof'] = [[[242, 8], [308, 8], [308, 17], [242, 17]]];
+  // The front pavilion is the low building at the lower right: its ground storey goes with L1, its upper storey with L2
+  // and its roof with L3 (the L2 and L3 slabs in the takeoff are the larger podium slabs).
+  bands['L1'].push([[348, 616], [372, 600], [396, 606], [420, 604], [606, 592], [634, 604], [640, 612], [636, 628], [626, 642], [560, 650], [470, 652], [420, 654], [380, 649], [348, 640]]);
+  bands['L2'].push([[377, 568], [392, 563], [412, 567], [604, 554], [604, 577], [606, 592], [420, 604], [396, 606], [377, 604]]);
+  bands['L3'].push([[392, 566], [396, 556], [402, 535], [424, 535], [430, 551], [580, 535], [620, 546], [618, 553], [604, 554], [412, 567]]);
+  // P2 and P1 are below ground and not in the photo: they count towards the total but are not drawn
+  bands['P1'] = [];
+  bands['P2'] = [];
   return bands;
 }
-const TOWER_ORDER = Array.from({ length: 27 }, (_, i) => 'L' + (i + 1)).concat(['Roof']);
+const TOWER_ORDER = ['P2', 'P1'].concat(Array.from({ length: 27 }, (_, i) => 'L' + (i + 1)), ['Roof']);
+const towerName = c => c === 'Roof' ? 'Roof' : 'Level ' + (c[0] === 'L' ? c.slice(1) : c);
 const TOWER_BANDS = towerBands();
 function renderTowerProgress() {
   const fig = document.getElementById('tower-fig');
@@ -1556,25 +1565,26 @@ function renderTowerProgress() {
   if (!fig || !side) return;
   const pts = b => b.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
   const done = TOWER_ORDER.filter(c => _levelStatus[c]);
-  const clip = done.map(c => `<polygon points="${pts(TOWER_BANDS[c])}"/>`).join('');
-  const hover = TOWER_ORDER.map(c => `<polygon points="${pts(TOWER_BANDS[c])}" fill="transparent"><title>${c === 'Roof' ? 'Roof' : 'Level ' + c.slice(1)}: ${_levelStatus[c] ? 'complete' : 'not complete yet'}</title></polygon>`).join('');
-  fig.innerHTML = `<svg viewBox="0 0 ${TOWER_W} ${TOWER_H}" role="img" aria-label="The tower: levels marked complete are shown in colour, the rest in grey">
+  // The photo is always in full colour. The tower and the front pavilion are laid over with a pale grey copy
+  // wherever the level is NOT complete yet (sky inside an outline is left alone, so only the building is greyed).
+  const todo = TOWER_ORDER.filter(c => !_levelStatus[c]).map(c => TOWER_BANDS[c].map(b => `<polygon points="${pts(b)}"/>`).join('')).join('');
+  const hover = TOWER_ORDER.map(c => TOWER_BANDS[c].map(b => `<polygon points="${pts(b)}" fill="transparent"><title>${towerName(c)}: ${_levelStatus[c] ? 'complete' : 'not complete yet'}</title></polygon>`).join('')).join('');
+  fig.innerHTML = `<svg viewBox="0 0 ${TOWER_W} ${TOWER_H}" role="img" aria-label="The tower and front pavilion: levels marked complete are shown in colour, the rest in grey">
     <defs>
-      <filter id="tw-grey"><feColorMatrix type="saturate" values="0"/></filter>
-      <filter id="tw-key" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  5 0 -5 0 2.5"/></filter>
-      <clipPath id="tw-done">${clip}</clipPath>
+      <filter id="tw-ghost" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.0957 0.3218 0.0325 0 0.55  0.0957 0.3218 0.0325 0 0.55  0.0957 0.3218 0.0325 0 0.55  5 0 -5 0 2.5"/></filter>
+      <clipPath id="tw-todo">${todo}</clipPath>
     </defs>
-    <image href="${TOWER_PHOTO}" width="${TOWER_W}" height="${TOWER_H}" filter="url(#tw-grey)" opacity="0.4"/>
-    <image href="${TOWER_PHOTO}" width="${TOWER_W}" height="${TOWER_H}" filter="url(#tw-key)" clip-path="url(#tw-done)"/>
+    <image href="${TOWER_PHOTO}" width="${TOWER_W}" height="${TOWER_H}"/>
+    <image href="${TOWER_PHOTO}" width="${TOWER_W}" height="${TOWER_H}" filter="url(#tw-ghost)" clip-path="url(#tw-todo)"/>
     ${hover}
   </svg>`;
   const pct = Math.round(done.length / TOWER_ORDER.length * 100);
   side.innerHTML = `
     <p class="tw-count">${done.length} <span>of ${TOWER_ORDER.length} levels complete</span></p>
     <div class="tw-bar"><div style="width:${pct}%"></div></div>
-    <div class="tw-chips">${TOWER_ORDER.map(c => `<span class="tw-chip${_levelStatus[c] ? ' done' : ''}">${c === 'Roof' ? 'Roof' : c}</span>`).join('')}</div>
-    <p class="tw-note">Colour shows the levels you have marked <strong>complete</strong> in the Level completion section. Grey means not complete yet. Hover over the tower to see a level's status.</p>
-    <p class="tw-note">Each coloured band is the storey whose floor is that level's slab: L1 is the ground storey (timber base), L25 the roof deck, L26 and L27 the penthouse blocks, and Roof the cap. The below-grade levels (P2, P1) are not in the picture.</p>`;
+    <div class="tw-chips">${TOWER_ORDER.map(c => `<span class="tw-chip${_levelStatus[c] ? ' done' : ''}">${c}</span>`).join('')}</div>
+    <p class="tw-note">The tower and the front pavilion are grey until their levels are marked <strong>complete</strong> in the Level completion section, and then turn to colour. The surroundings are always in colour. Hover over the building to see a level's status.</p>
+    <p class="tw-note">Each band is the storey whose floor is that level's slab: L1 is the ground storey (timber base), L25 the roof deck, L26 and L27 the penthouse blocks, and Roof the cap. The pavilion goes with the lowest levels: its ground storey with L1, its upper storey with L2 and its roof with L3. P2 and P1 are below ground and not in the photo, so they count in the total but are not drawn.</p>`;
 }
 
 function renderLevelPanel() {
