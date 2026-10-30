@@ -261,6 +261,10 @@
   .ms-item:hover { background: #F4F3EE; }
   .ms-item input { margin: 0; cursor: pointer; }
   .ms-all { font-weight: 600; border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0; margin-bottom: 4px; }
+  .ms-quick { font-weight: 600; }
+  .ms-quick.off { opacity: .45; cursor: default; }
+  .ms-quick .ms-count { font-weight: 400; font-size: 12px; color: var(--text-muted); }
+  .ms-sep { border-top: 1px solid var(--border); margin: 4px 0; }
   .ms-foot { display: flex; justify-content: space-between; gap: 8px; padding: 8px 4px 2px; margin-top: 4px; border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--card); }
   .bal-sec { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 0; }
   .note-list { margin-top: 6px; }
@@ -443,7 +447,7 @@
       <details class="help-sec">
         <summary>3. By level and category (the cards)</summary>
         <div class="help-body"><ul>
-          <li><strong>Level</strong> opens a checklist. Tick one level, several levels, or <strong>All levels</strong>, then click <strong>Done</strong> (or click anywhere else). <strong>Clear</strong> unticks everything. <strong>Type</strong> and <strong>Mix</strong> are normal dropdowns. With nothing chosen, the page asks you to select a level or type.</li>
+          <li><strong>Level</strong> opens a checklist. Tick one level, several levels, or use the quick choices at the top: <strong>All levels</strong>, <strong>All poured levels</strong> (every level with at least 1 m&sup3; of concrete poured, counting completed pours only) or <strong>All completed</strong> (only the levels marked complete). The number in brackets shows how many levels each one picks. Then click <strong>Done</strong> (or click anywhere else). <strong>Clear</strong> unticks everything. <strong>Type</strong> and <strong>Mix</strong> are normal dropdowns. With nothing chosen, the page asks you to select a level or type.</li>
           <li>Each card shows a ring with the <strong>% of the estimate poured</strong>, the cost spent, the poured volume <strong>of</strong> the estimate (large numbers), and what is <strong>remaining</strong>.</li>
           <li>Colours: <strong>green</strong> on track (under 85%), <strong>amber</strong> near estimate (85 to 100%), <strong>red</strong> over estimate (above 100%).</li>
           <li><strong>Grey</strong> cards: &ldquo;no estimate&rdquo; (nothing budgeted for it), &ldquo;level not mapped&rdquo; (the level is not in the takeoff, for example L30 or above), or &ldquo;none complete yet&rdquo; (only pending POs so far).</li>
@@ -768,7 +772,7 @@ function rowTheme(pct) {
 function drawDonut(id, pct, unmapped) {
   if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
   const canvas = document.getElementById(id);
-  if (!canvas) return;
+  if (!canvas || typeof Chart === 'undefined') return;     // if the chart library has not loaded, skip the rings rather than stop the page
   const capped = pct === null ? 0 : Math.min(pct / 100, 1);
   const { solid, light } = unmapped ? { solid:'#9a9a94', light:'#ecebe6' } : rowTheme(pct);
   _charts[id] = new Chart(canvas, {
@@ -1052,18 +1056,38 @@ function levelSelection() {
   return { codes, none: codes.length === 0, isAll: all.length > 0 && codes.length === all.length };
 }
 function levelLabel(codes) { return codes.length <= 4 ? codes.join(', ') : codes.length + ' levels'; }
+// The two quick sets offered under "All levels": every level with at least 1 m3 of concrete poured (completed pours only),
+// and every level that has been marked complete.
+const POURED_MIN_M3 = 1;
+function quickSet(kind) {
+  const all = allLevelCodes();
+  if (kind === 'poured') return all.filter(c => ((_levels.find(l => l.level === c) || {}).actualVolume || 0) >= POURED_MIN_M3);
+  return all.filter(c => _levelStatus[c]);                       // 'done': only levels marked complete
+}
+const sameLevels = (a, b) => b.length > 0 && a.length === b.length && a.every(x => b.includes(x));
 function updateLevelButton() {
   const el = document.getElementById('sel-level-label');
   if (!el) return;
   const ls = levelSelection();
-  el.textContent = ls.none ? 'Select level' : (ls.isAll ? 'All levels' : levelLabel(ls.codes));
+  let text;
+  if (ls.none) text = 'Select level';
+  else if (ls.isAll) text = 'All levels';
+  else if (sameLevels(ls.codes, quickSet('poured'))) text = 'All poured levels';
+  else if (sameLevels(ls.codes, quickSet('done'))) text = 'All completed';
+  else text = levelLabel(ls.codes);
+  el.textContent = text;
 }
 function renderLevelMenu() {
   const menu = document.getElementById('sel-level-menu');
   if (!menu) return;
   const ls = levelSelection();
+  const poured = quickSet('poured'), done = quickSet('done');
+  const quick = (kind, label, set) => `<label class="ms-item ms-quick${set.length ? '' : ' off'}"><input type="checkbox" data-quick="${kind}" ${sameLevels(ls.codes, set) ? 'checked' : ''} ${set.length ? '' : 'disabled'} onchange="toggleQuick('${kind}', this.checked)"> ${label} <span class="ms-count">(${set.length})</span></label>`;
   menu.innerHTML =
-    `<label class="ms-item ms-all"><input type="checkbox" ${ls.isAll ? 'checked' : ''} onchange="toggleAllLevels(this.checked)"> All levels</label>` +
+    `<label class="ms-item ms-quick"><input type="checkbox" data-quick="all" ${ls.isAll ? 'checked' : ''} onchange="toggleAllLevels(this.checked)"> All levels</label>` +
+    quick('poured', 'All poured levels', poured) +
+    quick('done', 'All completed', done) +
+    '<div class="ms-sep"></div>' +
     allLevelCodes().map(c => `<label class="ms-item"><input type="checkbox" data-code="${c}" ${ls.codes.includes(c) ? 'checked' : ''} onchange="toggleLevel('${c}', this.checked)"> ${c}${_levelStatus[c] ? ' <span class="lvl-badge">\u2713 complete</span>' : ''}</label>`).join('') +
     `<div class="ms-foot"><button type="button" class="lvl-btn" onclick="clearLevels()">Clear</button><button type="button" class="lvl-btn primary" onclick="closeLevelMenu()">Done</button></div>`;
 }
@@ -1072,8 +1096,16 @@ function syncMenuChecks() {
   if (!menu || !menu.querySelectorAll) return;
   const ls = levelSelection();
   menu.querySelectorAll('input[type=checkbox]').forEach(cb => {
-    cb.checked = cb.getAttribute('data-code') ? ls.codes.includes(cb.getAttribute('data-code')) : ls.isAll;
+    const kind = cb.getAttribute('data-quick'), code = cb.getAttribute('data-code');
+    if (code) cb.checked = ls.codes.includes(code);
+    else if (kind === 'all') cb.checked = ls.isAll;
+    else if (kind) cb.checked = sameLevels(ls.codes, quickSet(kind));
   });
+}
+function toggleQuick(kind, on) {
+  _selLevels = on ? quickSet(kind) : [];
+  syncMenuChecks();
+  levelSelectionChanged();
 }
 function levelSelectionChanged() { updateLevelButton(); filterRows(); }
 function toggleLevel(code, on) {
