@@ -1,5 +1,15 @@
 const { ESTIMATE: ESTIMATE_RAW, LOCATION_MAP, WHOLE_BUILDING_BUDGET } = require("./estimate-data");
 
+// Charges not in the Concrete Log (per Eric): $50 fuel surcharge per truck (trucks ~ m3 / 10),
+// $14/m3 environmental charge, then 7% PST on the whole amount. The pour map's PO costs are unaffected.
+const PST_RATE = 0.07, FUEL_SURCHARGE_PER_TRUCK = 50, M3_PER_TRUCK = 10, ENV_CHARGE_PER_M3 = 14;
+function pourCost(p) {
+  const base = (p.price || p.volume * p.rate) + p.additives;
+  const fuel = (p.volume / M3_PER_TRUCK) * FUEL_SURCHARGE_PER_TRUCK;
+  const env = p.volume * ENV_CHARGE_PER_M3;
+  return (base + fuel + env) * (1 + PST_RATE);
+}
+
 // The Concrete Log's Level list has no "P1a", so P1a is treated as part of P1
 // everywhere: its estimate is added onto P1 here, and any P1a / P1A pour in the
 // log is counted as P1 (see canonLevel below). Steps and Toppings are folded into
@@ -162,7 +172,7 @@ exports.handler = async function (event) {
       const key = p.level + "||" + category;
       if (!agg[key]) agg[key] = { level: p.level, category, actualVolume: 0, actualCost: 0, mixes: {} };
       agg[key].actualVolume += p.volume;
-      agg[key].actualCost += (p.price || p.volume * p.rate) + p.additives;
+      agg[key].actualCost += pourCost(p);
       if (p.mixCode) agg[key].mixes[p.mixCode] = true;
     }
 
@@ -175,7 +185,7 @@ exports.handler = async function (event) {
       const key = p.level + "||" + category;
       if (!pendAgg[key]) pendAgg[key] = { level: p.level, category, volume: 0, cost: 0 };
       pendAgg[key].volume += p.volume;
-      pendAgg[key].cost += (p.price || p.volume * p.rate) + p.additives;
+      pendAgg[key].cost += pourCost(p);
     }
     for (const [key, pa] of Object.entries(pendAgg)) {
       if (!agg[key]) agg[key] = { level: pa.level, category: pa.category, actualVolume: 0, actualCost: 0, mixes: {}, pendingOnly: true };
@@ -273,7 +283,7 @@ exports.handler = async function (event) {
       (sum, cats) => sum + Object.values(cats).reduce((s, v) => s + v, 0), 0
     );
     const wholeBuildingActual = pours.reduce((s, p) => s + p.volume, 0);
-    const wholeBuildingActualCost = pours.reduce((s, p) => s + (p.price || p.volume * p.rate) + p.additives, 0);
+    const wholeBuildingActualCost = pours.reduce((s, p) => s + pourCost(p), 0);
     const wholeBuildingEstimateCost = WHOLE_BUILDING_BUDGET;
     const countedRows = rows.filter(r => !r.pendingOnly);
     const activeRows = countedRows.filter(r => r.category !== "Unmapped - review");
@@ -284,7 +294,7 @@ exports.handler = async function (event) {
       const groupKey = resolveGroup(p.location, p.mixCode);
       if (!mixAgg[groupKey]) mixAgg[groupKey] = { vol: 0, cost: 0, mixes: {} };
       mixAgg[groupKey].vol += p.volume;
-      mixAgg[groupKey].cost += (p.price || p.volume * p.rate) + p.additives;
+      mixAgg[groupKey].cost += pourCost(p);
       if (p.mixCode) mixAgg[groupKey].mixes[p.mixCode] = true;
     }
     const mixComparison = Object.entries(mixAgg).map(([key, agg2]) => {
@@ -391,7 +401,7 @@ exports.handler = async function (event) {
         location: p.location,
         category: LOCATION_MAP[p.location] || "Unmapped - review",
         volume: round(p.volume),
-        cost: round((p.price || p.volume * p.rate) + p.additives),
+        cost: round(pourCost(p)),
         mix: p.mixCode,
         group: resolveGroup(p.location, p.mixCode),
       })),
@@ -401,7 +411,7 @@ exports.handler = async function (event) {
         activeEstimateCost: round(activeRows.reduce((s, r) => s + r.estimateCost, 0)),
         activeActualCost: round(countedRows.reduce((s, r) => s + r.actualCost, 0)),
         pendingVolume: round(pendingPours.reduce((s, p) => s + p.volume, 0)),
-        pendingCost: round(pendingPours.reduce((s, p) => s + (p.price || p.volume * p.rate) + p.additives, 0)),
+        pendingCost: round(pendingPours.reduce((s, p) => s + pourCost(p), 0)),
         wholeBuildingEstimate: round(wholeBuildingEstimate),
         wholeBuildingActual: round(wholeBuildingActual),
         wholeBuildingEstimateCost: round(wholeBuildingEstimateCost),
