@@ -153,7 +153,8 @@ exports.handler = async function (event) {
         const mixCode = orderedText ? String(orderedText).trim().split(/[\s-]/)[0] : null;
         // Admixture charges logged against this mix slot (superplasticizer,
         // PRA, delayset, winter handling, etc.)
-        const additives = addKeys.reduce((s, k) => s + num(cells[colIdByTitle[k]]), 0);
+        // Additive columns hold $/m3 rates (e.g. delayset $13/m3), so the charge is the sum of the rates x this mix's volume.
+        const additives = addKeys.reduce((s, k) => s + num(cells[colIdByTitle[k]]), 0) * vol;
         (completed ? pours : pendingPours).push({
           volume: vol,
           level: canonLevel(level),
