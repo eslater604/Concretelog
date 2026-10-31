@@ -1,11 +1,12 @@
 const { ESTIMATE: ESTIMATE_RAW, LOCATION_MAP, WHOLE_BUILDING_BUDGET } = require("./estimate-data");
 
-// Charges not in the Concrete Log (per Eric): $50 fuel surcharge per truck (trucks ~ m3 / 10),
+// Charges not in the Concrete Log (per Eric): $50 fuel surcharge per truck (trucks = m3 / 10 rounded up, per mix delivery),
 // $14/m3 environmental charge, then 7% PST on the whole amount. The pour map's PO costs are unaffected.
 const PST_RATE = 0.07, FUEL_SURCHARGE_PER_TRUCK = 50, M3_PER_TRUCK = 10, ENV_CHARGE_PER_M3 = 14;
 function pourCost(p) {
   const base = (p.price || p.volume * p.rate) + p.additives;
-  const fuel = (p.volume / M3_PER_TRUCK) * FUEL_SURCHARGE_PER_TRUCK;
+  const trucks = Math.max(1, Math.ceil(Math.round(p.volume * 100) / 100 / M3_PER_TRUCK)); // 10 m3 or less = 1 truck, 10.1-20 = 2, ...
+  const fuel = trucks * FUEL_SURCHARGE_PER_TRUCK;
   const env = p.volume * ENV_CHARGE_PER_M3;
   return (base + fuel + env) * (1 + PST_RATE);
 }
