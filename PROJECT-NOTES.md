@@ -99,3 +99,7 @@ Netlify setting needed: `SMARTSHEET_API_TOKEN`.
 - One conversation edits a given file at a time. Dashboard work: `index.html` and the dashboard functions. Pour map work: `pour-map.html` and the pour/drawing functions. Anything touching `sync-concrete.js` or the two pages' links needs both sides checked.
 - Before replacing a file on the site, save the old one (for example `index-OLD.html`). After each change, download the new files and make them the new master copy.
 - At the end of a session ask Claude to update this file.
+
+
+## Cost uplift (added)
+`sync-concrete.js` `pourCost(p)` = (concrete + admixtures + fuel $50 per truck at m3/10 + environmental $14/m3) x 1.07 PST. Applied to actual, logged/pending and mix-line costs. Pour map PO costs unchanged. Open question: does the $2,726,165 budget already include these?
